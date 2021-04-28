@@ -38,5 +38,5 @@ switch angle_type
         set(gca,'FontSize',12);
         title('Rigid Body Rotation: Z','FontSize',16);
         xlabel('Time (s)','FontSize',16);
+        print('opti_rot','-dpng','-r300');
 end
-%print('opti_rot','-dpng','-r300');
