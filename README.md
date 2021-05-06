@@ -88,7 +88,7 @@ ylabel(['Euclidian Distane (cm)'],'FontSize',22);
 xlabel('Time (s)','FontSize',22);
 print('euclidian_distance_from_start','-dsvg','-r300');
 ```
-<img src="./media/euclidian_distance_from_start.svg" height="500">
+<img src="./media/euclidian_distance_from_start.svg" width ="50%" height="50%">
 
 
 ### Fancy Rotation Plots
