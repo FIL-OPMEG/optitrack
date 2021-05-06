@@ -1,6 +1,7 @@
 # Optitrack at the Wellcome Centre for Human Neuroimaging OP-MEG lab:
 Scripts and SOPs for collecting, processing and plotting the Optitrack motion capture data
 
+<img src="./media/opti.png" width ="90%" height="90%">
 
 # Things this Repository can do:
 
@@ -71,6 +72,9 @@ for c = 1:3
 end
 ```
 
+<img src="./media/histogram3.png" width ="50%" height="50%">
+
+
 ### Calculate Euclidian Distance and Plot
 
 ```matlab
@@ -88,7 +92,7 @@ ylabel(['Euclidian Distane (cm)'],'FontSize',22);
 xlabel('Time (s)','FontSize',22);
 print('euclidian_distance_from_start','-dsvg','-r300');
 ```
-<img src="./media/euclidian_distance_from_start.svg" width ="50%" height="50%">
+<img src="./media/euclidian_distance_from_start.svg" width ="80%" height="80%">
 
 
 ### Fancy Rotation Plots
@@ -122,4 +126,4 @@ for c = 1:3
 end
 ```
 
-<img src="./media/polarhistogram3.png" height="600">
+<img src="./media/polarhistogram3.png" width ="50%" height="50%">
