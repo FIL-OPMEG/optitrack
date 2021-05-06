@@ -120,4 +120,4 @@ for c = 1:3
 end
 ```
 
-<img src="./media/polarhistogram3.png" width="100" height="100">
+<img src="./media/polarhistogram3.png" height="600">
