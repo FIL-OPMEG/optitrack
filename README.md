@@ -72,7 +72,7 @@ for c = 1:3
 end
 ```
 
-<img src="./media/histogram3.png" width ="50%" height="50%">
+<img src="./media/histogram1.png" width ="50%" height="50%">
 
 
 ### Calculate Euclidian Distance and Plot
