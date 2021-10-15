@@ -141,9 +141,16 @@ if ~params.LengthsAlreadyMatch
     elseif length(samples) == 1
         warning('Only one step in the trigger was found. It will be assume that this is from the start of the Optitrack recording');
     elseif length(samples) == 2
-     disp(['Start-End of OPM Trigger: ' num2str(round(...
-         OPMdata.time{1}(samples(2)) - OPMdata.time{1}(samples(1)),2))...
-         's']);
+        switch OPMdataType
+            case 'ft'
+                disp(['Start-End of OPM Trigger: ' num2str(round(...
+                    OPMdata.time{1}(samples(2)) - OPMdata.time{1}(samples(1)),2))...
+                    's']);
+            case 'spm'
+                disp(['Start-End of OPM Trigger: ' num2str(round(...
+                    OPMdata.time(samples(2)) - OPMdata.time(samples(1)),2))...
+                    's']);
+        end
      disp(['Length of Optitrack data: ' num2str(round(...
          MovementData.time(end),2)) 's']);
     end
@@ -235,7 +242,9 @@ if ~params.ResampleOPMdata
                     t1 = linspace(MovementData.time(1), MovementData.time(end), size(OPMdataOut,2));
             end
             MovementDataOut = resampleOptiTrack(MovementData,t1);
-            MovementDataOut.time = OPMdataOut.time{1};
+            if strcmp(OPMdataType, 'ft')
+                MovementDataOut.time = OPMdataOut.time{1};
+            end
         case 'matrix'
             switch OPMdataType
                 case 'spm'
