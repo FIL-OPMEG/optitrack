@@ -2,7 +2,7 @@ function [motionImport] = readRigidBody(cfg)
 
 % Function will read rigid body and marker data from a structure exported
 % from OptiTrack Motive. It must only have one rigid body and only markers
-% from that rigid body. It could be adapted to be more flexible though
+% from that rigid body. It could be adapted to be more flexible though.
 % 
 % Input:
 % cfg.filename = string 'filename'
