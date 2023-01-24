@@ -1,4 +1,4 @@
-% function [
+function [motionImport] = readRigidBody(cfg)
 
 % Function will read rigid body and marker data from a structure exported
 % from OptiTrack Motive. It must only have one rigid body and only markers
@@ -7,6 +7,7 @@
 % Input:
 % cfg.filename = string 'filename'
 % cfg.importOrder = string 'xyz' or whatever was selected when exporting
+% cfg.plot = true or false;
 % the data from Motive. You can check the csv file.
 %
 % Output is a Matlab table:
@@ -14,14 +15,14 @@
 % rigid body cols = xPos, yPos, zPos, xOri, yOri, zOri, error
 % marker cols = xPos, yPos, zPos, error. 
 
-% Debug input:
-cfg.importOrder = 'XYZ';
-
 % Simplest way seems to be to read the file as a table first
-motionImport = readtable(motionFilename);
+motionImport = readtable(cfg.filename);
 
-% Remove nans
-motionImport = motionImport(~any(ismissing(motionImport),2),:);
+% Find first row that does not include only NaNs
+firstNonNAN = find(~all(isnan(motionImport{:,:}),2),1);
+
+% Set the table to just the rows after and including that
+motionImport = motionImport(firstNonNAN:end,:);
 
 % Get the automatically labelled columns
 autoColumnNames = motionImport.Properties.VariableNames;
@@ -62,24 +63,60 @@ else
 	disp('One rigid body identified');
 end
 
-% Count the number of markers and let the user know
-markerCount = sum(markerIdx)/4;
-disp(strcat(num2str(markerCount),' rigid body markers identified'));
-
 % Rename columns for rigid body
 columnNames(3:9) = [generalOrder {'error'}];
 
-% TO DO: We don't really need markers so only add that in if needed.
+% Only keep the required columns.
+colsToKeep = ~cellfun(@isempty, columnNames);
+motionImport = motionImport(:,colsToKeep);
 
-% Make a final table
+% Update the variable names
+motionImport.Properties.VariableNames = columnNames(colsToKeep);
 
+% Plot, if user specified
+if cfg.plot
+	figure;
+	set(gcf,'Position',[1 1 1000 900]);
+	subplot(3,1,1);
+	plot(motionImport.Time,motionImport.posx,'r','LineWidth',2);
+	set(gca,'FontSize',12);
+	ylabel('Distance','FontSize',16);
+	title('Rigid Body Position: X','FontSize',16);
+	
+	subplot(3,1,2);
+	plot(motionImport.Time,motionImport.posy,'g','LineWidth',2);
+	set(gca,'FontSize',12);
+	ylabel('Distance','FontSize',16);
+	title('Rigid Body Position: Y','FontSize',16);
+	
+	subplot(3,1,3);
+	plot(motionImport.Time,motionImport.posz,'b','LineWidth',2);
+	set(gca,'FontSize',12);
+	ylabel('Distance','FontSize',16);
+	title('Rigid Body Position: Z','FontSize',16);
+	xlabel('Time (s)','FontSize',16);
 
-
-
-
-
-
-
+	figure;
+	set(gcf,'Position',[1 1 1000 900]);
+	subplot(3,1,1);
+	plot(motionImport.Time,motionImport.orix,'r','LineWidth',2);
+	set(gca,'FontSize',12);
+	ylabel('Angle','FontSize',16);
+	title('Rigid Body Rotation: X','FontSize',16);
+	
+	subplot(3,1,2);
+	plot(motionImport.Time,motionImport.oriy,'g','LineWidth',2);
+	set(gca,'FontSize',12);
+	ylabel('Angle','FontSize',16);
+	title('Rigid Body Rotation: Y','FontSize',16);
+	
+	subplot(3,1,3);
+	plot(motionImport.Time,motionImport.oriz,'b','LineWidth',2);
+	set(gca,'FontSize',12);
+	ylabel('Angle','FontSize',16);
+	title('Rigid Body Rotation: Z','FontSize',16);
+	xlabel('Time (s)','FontSize',16);
+end
 
 
 
