@@ -9,13 +9,31 @@ function [linearVelocityMagFilt,angularVelocityMagFilt,spatialVelocityMagFilt] =
 % cfg.sg_freq = int; % Frequency of Savitzky-Golay filter (e.g. 2Hz = 0.5s)
 % cfg.sg_order = int; % Order of Savitzky-Golay filter (default = 2).
 % cfg.sampleRate = int; % fs, e.g. 120;
+% cfg.plot = bool
 % 
 % Written by Nicholas Alexander (n.alexander@ucl.ac.uk) 31/01/2023
 
+%% Set defaults
 % Find the sample rate if not specified.
 if isempty(cfg.sampleRate)
 	cfg.sampleRate = round(motionImport.Sample(end)/motionImport.Time(end));
 	disp("Setting sample rate automatically. Sample rate = " + cfg.sampleRate + "Hz");
+end
+
+% Default Savitzky-Golay settings
+if isempty(cfg.sg_order)
+	cfg.sg_order = 2;
+	disp("Setting Savitzky-Golay filter order to default: " + cfg.sg_order);
+end
+
+if isempty(cfg.sg_freq)
+	cfg.sg_freq = 2;
+	disp("Setting Savitzky-Golay filter order to default: " + cfg.sg_freq);
+end
+
+% Plot or not
+if isempty(cfg.plot)
+	cfg.plot = false;
 end
 
 %% Calculate the linear velocity
@@ -30,7 +48,7 @@ end
 
 %% Calculate the angular velocity
 % Time data
-dt = 1/sampleRate;
+dt = 1/cfg.sampleRate;
 
 % Calculate derivatives
 wx = gradient(deg2rad(motionImport.orix), dt)./dt; % x angular velocity in rad/s
@@ -57,10 +75,10 @@ end
 
 %% Clean up the velocities
 % Savitzky-Golay filter the displacement, fitting a 2nd order polynomial to 2Hz*
-if rem(sampleRate,2) == 0
-	framelen = (cfg.sg_freq * sampleRate) + 1; 
+if rem(cfg.sampleRate,2) == 0
+	framelen = (cfg.sg_freq * cfg.sampleRate) + 1; 
 else
-	framelen = cfg.sg_freq * sampleRate; 
+	framelen = cfg.sg_freq * cfg.sampleRate; 
 end
 
 linearVelocityMagFilt = sgolayfilt(linearVelocityMag, cfg.sg_order, framelen);
@@ -75,31 +93,30 @@ angularVelocityMagFilt(zerosIdx) = 0;
 zerosIdx = spatialVelocityMagFilt < 0;
 spatialVelocityMagFilt(zerosIdx) = 0;
 
-% % Plot them together
-% figure
-% hold on
-% plot(motionImport.Time, linearVelocityMagFilt)
-% plot(motionImport.Time, angularVelocityMagFilt)
-% plot(motionImport.Time, spatialVelocityMagFilt)
-
-% %% Compare output with 6DOF data
-% data1 = linearVelocityMagFilt;
-% data2 = motionImport.posx;
-% data3 = motionImport.posy;
-% data4 = motionImport.posz;
-% 
-% normData1 = (data1 - mean(data1)) / max(data1 - mean(data1));
-% normData2 = (data2 - mean(data2)) / max(data2 - mean(data2));
-% 
-% 
-% figure
-% hold on
-% plot(motionImport.Time, normData1)
-% plot(motionImport.Time, normData2)
+%% Plot normalised outputs
+if (cfg.plot)
+	figure
+	hold on
+	title("Normalised magnitude of velocities")
+	plot(motionImport.Time, normaliseTimeseries(linearVelocityMagFilt));
+	plot(motionImport.Time, normaliseTimeseries(angularVelocityMagFilt));
+	plot(motionImport.Time, normaliseTimeseries(spatialVelocityMagFilt));
+	legend('Linear','Angular','Spatial')
+else
+	disp("Not plotting output")
+end
 
 
+end
 
 
+function yNorm = normaliseTimeseries(y)
+  % Subtract the mean from the time series
+  y = y - mean(y);
+  
+  % Scale the time series to values between -1 and 1
+  yNorm = 2*(y - min(y)) / (max(y) - min(y)) - 1;
+end
 
 
 
