@@ -1,10 +1,11 @@
-function [motionImport] = readRigidBody(cfg,filename)
+function [motionImport] = readRigidBody(cfg)
 %__________________________________________________________________________
 % Function will read rigid body and marker data from a structure exported
 % from OptiTrack Motive. It must only have one rigid body and only markers
 % from that rigid body. It could be adapted to be more flexible though.
 % 
 % Input:
+% cfg.filename
 % cfg.importOrder = string 'xyz' or whatever was selected when exporting
 % cfg.plot = true or false;
 % the data from Motive. You can check the csv file.
@@ -34,7 +35,7 @@ end
 % Simplest way seems to be to read the file as a table first
 disp('Loading .csv file...')
 motionImport = readtable(filename);
-disp(['Successfully read: ' filename]);
+disp(['Successfully read: ' cfg.filename]);
 
 % Find first row that does not include only NaNs
 firstNonNAN = find(~all(isnan(motionImport{:,:}),2),1);
