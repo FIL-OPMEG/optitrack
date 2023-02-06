@@ -1,4 +1,4 @@
-function [linearVelocityMagFilt,angularVelocityMagFilt,spatialVelocityMagFilt] = getRigidBodyVelocity(motionImport, cfg)
+function [linearVelocityMag,angularVelocityMag,spatialVelocityMag] = getRigidBodyVelocity(rigidBodyT, cfg)
 % Function outputs the magnitude of linearVelocity, rotationVelocity and 
 % spatialVelocity of a rigid body. Requires input of motionImport from 
 % readRigidBody function and a cfg specification.
@@ -6,6 +6,7 @@ function [linearVelocityMagFilt,angularVelocityMagFilt,spatialVelocityMagFilt] =
 % motionImport = table with columns: 
 %				  Sample, Time, posx, posy, posz, orix, oriy, oriz, error 
 % 
+% cfg.sg_filt = bool; % Apply a Savitzky-Golay filter (default = true).
 % cfg.sg_freq = int; % Frequency of Savitzky-Golay filter (e.g. 2Hz = 0.5s)
 % cfg.sg_order = int; % Order of Savitzky-Golay filter (default = 2).
 % cfg.sampleRate = int; % fs, e.g. 120;
@@ -16,7 +17,7 @@ function [linearVelocityMagFilt,angularVelocityMagFilt,spatialVelocityMagFilt] =
 %% Set defaults
 % Find the sample rate if not specified.
 if isempty(cfg.sampleRate)
-	cfg.sampleRate = round(motionImport.Sample(end)/motionImport.Time(end));
+	cfg.sampleRate = round(rigidBodyT.Frame(end)/rigidBodyT.Time(end));
 	disp("Setting sample rate automatically. Sample rate = " + cfg.sampleRate + "Hz");
 end
 
@@ -37,11 +38,11 @@ if isempty(cfg.plot)
 end
 
 %% Calculate the linear velocity
-linearVelocity = zeros(length(motionImport.Sample),3);
-linearVelocityMag = zeros(length(motionImport.Sample),1);
+linearVelocity = zeros(length(rigidBodyT.Frame),3);
+linearVelocityMag = zeros(length(rigidBodyT.Frame),1);
 for i = 1:length(linearVelocity) - 1
-	prevPos = [motionImport.posx(i), motionImport.posy(i), motionImport.posz(i)];
-	currPos = [motionImport.posx(i+1), motionImport.posy(i+1), motionImport.posz(i+1)];
+	prevPos = [rigidBodyT.X_Position(i), rigidBodyT.Y_Position(i), rigidBodyT.Z_Position(i)];
+	currPos = [rigidBodyT.X_Position(i+1), rigidBodyT.Y_Position(i+1), rigidBodyT.Z_Position(i+1)];
 	linearVelocity(i,1:3) = currPos - prevPos;
 	linearVelocityMag(i) = norm(linearVelocity(i));
 end
@@ -51,13 +52,13 @@ end
 dt = 1/cfg.sampleRate;
 
 % Calculate derivatives
-wx = gradient(deg2rad(motionImport.orix), dt)./dt; % x angular velocity in rad/s
-wy = gradient(deg2rad(motionImport.oriy), dt)./dt; % y angular velocity in rad/s
-wz = gradient(deg2rad(motionImport.oriz), dt)./dt; % z angular velocity in rad/s
+wx = gradient(deg2rad(rigidBodyT.X_Rotation), dt)./dt; % x angular velocity in rad/s
+wy = gradient(deg2rad(rigidBodyT.Y_Rotation), dt)./dt; % y angular velocity in rad/s
+wz = gradient(deg2rad(rigidBodyT.Z_Rotation), dt)./dt; % z angular velocity in rad/s
 
 angularVelocity = [wx, wy, wz];
 
-angularVelocityMag = zeros(length(motionImport.Sample),1);
+angularVelocityMag = zeros(length(rigidBodyT.Frame),1);
 for i = 1:length(angularVelocity) - 1
 	angularVelocityMag(i) = norm(angularVelocity(i+1) - angularVelocity(i));
 end
@@ -81,26 +82,28 @@ else
 	framelen = cfg.sg_freq * cfg.sampleRate; 
 end
 
-linearVelocityMagFilt = sgolayfilt(linearVelocityMag, cfg.sg_order, framelen);
-angularVelocityMagFilt = sgolayfilt(angularVelocityMag, cfg.sg_order, framelen);
-spatialVelocityMagFilt = sgolayfilt(spatialVelocityMag, cfg.sg_order, framelen);
+if cfg.sg_filter
+	linearVelocityMag = sgolayfilt(linearVelocityMag, cfg.sg_order, framelen);
+	angularVelocityMag = sgolayfilt(angularVelocityMag, cfg.sg_order, framelen);
+	spatialVelocityMag = sgolayfilt(spatialVelocityMag, cfg.sg_order, framelen);
 
-% Can be an issue with negative values (impossible). Set to zero.
-zerosIdx = linearVelocityMagFilt < 0;
-linearVelocityMagFilt(zerosIdx) = 0;
-zerosIdx = angularVelocityMagFilt < 0;
-angularVelocityMagFilt(zerosIdx) = 0;
-zerosIdx = spatialVelocityMagFilt < 0;
-spatialVelocityMagFilt(zerosIdx) = 0;
+	% Can be an issue with negative values (impossible). Set to zero.
+	zerosIdx = linearVelocityMag < 0;
+	linearVelocityMag(zerosIdx) = 0;
+	zerosIdx = angularVelocityMag < 0;
+	angularVelocityMag(zerosIdx) = 0;
+	zerosIdx = spatialVelocityMag < 0;
+	spatialVelocityMag(zerosIdx) = 0;
+end
 
 %% Plot normalised outputs
 if (cfg.plot)
 	figure
 	hold on
 	title("Normalised magnitude of velocities")
-	plot(motionImport.Time, normaliseTimeseries(linearVelocityMagFilt));
-	plot(motionImport.Time, normaliseTimeseries(angularVelocityMagFilt));
-	plot(motionImport.Time, normaliseTimeseries(spatialVelocityMagFilt));
+	plot(rigidBodyT.Time, normaliseTimeseries(linearVelocityMag));
+	plot(rigidBodyT.Time, normaliseTimeseries(angularVelocityMag));
+	plot(rigidBodyT.Time, normaliseTimeseries(spatialVelocityMag));
 	legend('Linear','Angular','Spatial')
 else
 	disp("Not plotting output")

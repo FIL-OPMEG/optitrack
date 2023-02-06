@@ -64,6 +64,8 @@ for i = 1:length(configOptions)
 	cfg.(regexprep(configOptions{i},' ','')) = cfgString{find(cfgIdx) + 1};
 end
 
+cfg = convertToDouble(cfg);
+
 % Make the variable names from the rows
 columnNames = combineStrings(C(objRow),C(nameRow),C(varRow),C(typeRow));
 
@@ -88,6 +90,13 @@ for i = 1:length(possibleRb)
 end
 uniqueRb = unique(possibleRb);
 
+% Get the Frame and Time columns to duplicate across all tables
+frameCol = 'Frame'; 
+timeCol = 'Time';
+frameColIdx = contains(columnNames, frameCol);
+timeColIdx = contains(columnNames,timeCol);
+commonTable = [motionImport(:,frameColIdx), motionImport(:,timeColIdx)];
+commonTable.Properties.VariableNames = {frameCol, timeCol};
 % Make a table for each rigid body
 rigidBodyTables = [];
 for i = 1:length(uniqueRb)
@@ -104,6 +113,7 @@ for i = 1:length(uniqueRb)
 			curCol{k} = regexprep(curCol{k}, '_+', '_');
 		end
 		rigidBodyTables.(uniqueRb{i}).(types{j}).Properties.VariableNames = curCol;
+		rigidBodyTables.(uniqueRb{i}).(types{j}) = [commonTable, rigidBodyTables.(uniqueRb{i}).(types{j})];
 	end
 end
 
@@ -120,6 +130,7 @@ if any(cols)
 		curCol{i} = regexprep(curCol{i}, '_+', '_');
 	end
 	rigidBodyTables.RemainingMarkers.Properties.VariableNames = curCol;
+	rigidBodyTables.RemainingMarkers = [commonTable, rigidBodyTables.RemainingMarkers];
 else
 	disp("No additional markers found");
 end
@@ -143,11 +154,13 @@ function combinedString = combineStrings(varargin)
     numElements = cellfun(@numel, strings);
 
 	% If they don't try and make them all the same length by adding to the
-	% end. Will work if the file is a proper csv...
+	% beginning. Seems that Motive sometimes messes up their indexing and
+	% shifts a row to the wrong position. 
     while numel(unique(numElements)) ~= 1
+		warning("Your file may be a bit strange. Check that the row that defines a column type as rotation/position/Marker error is aligned correctly. This function may still work");
 		[minElement, minIdx] = min(numElements);
 		maxElement = max(numElements);
-		strings{minIdx} = [strings{minIdx}, cell(1,maxElement - minElement)];
+		strings{minIdx} = [cell(1,maxElement - minElement), strings{minIdx}];
 		numElements = cellfun(@numel, strings);
     end
     
@@ -178,3 +191,18 @@ function structOut = removeFields(structIn, keepFields)
 		fprintf('The following fields were removed: %s\n', strjoin(removedFields, ', '))
 	end
 end
+
+% Set fields to double if possible
+function S = convertToDouble(S)
+	fieldNames = fieldnames(S);
+	for i = 1:numel(fieldNames)
+		if ischar(S.(fieldNames{i}))
+			value = str2double(S.(fieldNames{i}));
+			if ~isnan(value) && value == round(value)
+				S.(fieldNames{i}) = value;
+			end
+		end
+	end
+end
+
+
