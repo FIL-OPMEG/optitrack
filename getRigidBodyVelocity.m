@@ -3,13 +3,12 @@ function [linearVelocityMag,angularVelocityMag,spatialVelocityMag] = getRigidBod
 % spatialVelocity of a rigid body. Requires input of motionImport from 
 % readRigidBody function and a cfg specification.
 %
-% motionImport = table with columns: 
-%				  Sample, Time, posx, posy, posz, orix, oriy, oriz, error 
+% motionImport = table from readRigidBody function. 
 % 
 % cfg.sg_filt = bool; % Apply a Savitzky-Golay filter (default = true).
 % cfg.sg_freq = int; % Frequency of Savitzky-Golay filter (e.g. 2Hz = 0.5s)
 % cfg.sg_order = int; % Order of Savitzky-Golay filter (default = 2).
-% cfg.sampleRate = int; % fs, e.g. 120;
+% cfg.sampleRate = int; % fs, e.g. 120 or rigidBodyTables.cfg;
 % cfg.plot = bool
 % 
 % Written by Nicholas Alexander (n.alexander@ucl.ac.uk) 31/01/2023
