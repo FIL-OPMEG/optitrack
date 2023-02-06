@@ -52,14 +52,12 @@ trigger = cfg.trigger;
 if islogical(trigger)
     % Check size
     if length(trigger) ~= size(OPMdata.trial{1},2)
-        ft_warning('Length of trigger and data need to be identical...');
-        return
+        error('Length of trigger and data need to be identical...');
     end
 
     % Check for only two change points
     if ~sum(diff(trigger) == 1) == 1
-        ft_warning('Trigger needs to go ON (i.e. change from 0-1) ONLY once');
-        return
+        error('Trigger needs to go ON (i.e. change from 0-1) ONLY once');
     end
 %% If user has specified an array of data try to extract a trigger
 else
@@ -67,6 +65,11 @@ else
    
     % Below is a work-in-progress option for the user to use a trigger
     % channel in their data
+
+    % Check size
+    if length(trigger) ~= size(OPMdata.trial{1},2)
+        error('Length of trigger and data need to be identical...');
+    end
 
     % Find edges of trigger (where it steps up and steps down)
      [~, samples] = findpeaks(abs(diff(cfg.trigger)), ...
@@ -86,7 +89,7 @@ else
         warning(['Only one step in the trigger was found. It will be'...
             'assume that this is from the start of the Optitrack ' ...
             'recording']);
-        
+
         % Create logical array
         cfg.trigger = zeros(1,length(cfg.trigger));
         cfg.trigger(samples(1):end) = 1;
