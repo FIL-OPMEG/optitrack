@@ -64,7 +64,7 @@ for i = 1:length(configOptions)
 	cfg.(regexprep(configOptions{i},' ','')) = cfgString{find(cfgIdx) + 1};
 end
 
-cfg = convertToDouble(cfg);
+cfg = convertToInt(cfg);
 
 % Make the variable names from the rows
 columnNames = combineStrings(C(objRow),C(nameRow),C(varRow),C(typeRow));
@@ -192,8 +192,8 @@ function structOut = removeFields(structIn, keepFields)
 	end
 end
 
-% Set fields to double if possible
-function S = convertToDouble(S)
+% Set fields to an int if possible
+function S = convertToInt(S)
 	fieldNames = fieldnames(S);
 	for i = 1:numel(fieldNames)
 		if ischar(S.(fieldNames{i}))
