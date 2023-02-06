@@ -64,6 +64,7 @@ for i = 1:length(configOptions)
 	cfg.(regexprep(configOptions{i},' ','')) = cfgString{find(cfgIdx) + 1};
 end
 
+% Some values are more useful as integers.
 cfg = convertToInt(cfg);
 
 % Make the variable names from the rows
