@@ -1,19 +1,18 @@
 function [rigidBodyTables] = readRigidBody(cfg)
 %__________________________________________________________________________
 % Function will read rigid body and marker data from a structure exported
-% from OptiTrack Motive. It must only have one rigid body and only markers
-% from that rigid body. It could be adapted to be more flexible though.
+% from OptiTrack Motive. 
 % 
 % Input:
-% cfg.filename
-% cfg.importOrder = string 'xyz' or whatever was selected when exporting
+% cfg.filename = path
 % cfg.plot = true or false;
-% the data from Motive. You can check the csv file.
 %
-% Output is a Matlab table:
-% sample, time, rigid body cols, marker cols, where:
-% rigid body cols = xPos, yPos, zPos, xOri, yOri, zOri, error
-% marker cols = xPos, yPos, zPos, error. 
+% Output is a structure containing a field for each rigid body in the file.
+% Those fields include the rigid body 6DOF info in one table and any
+% rigid body marker data in another. At the top level there is another
+% field containing a table containing any extra markers in the file, which
+% may be repeats of the rigid body markers, depending on how the data were
+% exported. There is a cfg structure containing info on the file. 
 % 
 % Authors:  Nicholas Alexander  (n.alexander@ucl.ac.uk)
 %           Robert Seymour      (rob.seymour@ucl.ac.uk) 
@@ -22,13 +21,22 @@ function [rigidBodyTables] = readRigidBody(cfg)
 %__________________________________________________________________________
 
 %% Set default values
-if ~isfield(cfg, 'importOrder')
-    cfg.importOrder = 'xyz';
+if ~isfield(cfg, 'filename')
+	error('You must specifiy a filename');
+else
+	if ~exist(cfg.filename,"file")
+		error('The specified filename:\n%s\ndoes not exist',cfg.filename);
+	end
 end
 
 if ~isfield(cfg, 'plot')
     cfg.plot = false;
+	disp("No summary plot requested (specify cfg.plot = true to enable)");
 end
+
+% Remove anything else in the cfg
+allowedFieldnames = {'plot','filename'};
+cfg = removeFields(cfg,allowedFieldnames);
 
 %% Start of function proper
 % Open the file
@@ -49,6 +57,17 @@ dataRow = varRow + 1;
 typeRow = varRow - 1;
 nameRow = varRow - 3;
 objRow = varRow - 4;
+
+% Get some useful information from the file
+configOptions = {'Format Version','Take Name','Capture Frame Rate',...
+	'Export Frame Rate','Capture Start Time','Total Frames in Take',...
+	'Total Exported Frames','Rotation Type','Length Units','Coordinate Space'};
+
+cfgString = strsplit(C{1},',');
+for i = 1:length(configOptions)
+	cfgIdx = contains(cfgString,configOptions{i});
+	cfg.(regexprep(configOptions{i},' ','')) = cfgString{find(cfgIdx) + 1};
+end
 
 % Make the variable names from the rows
 columnNames = combineStrings(C(objRow),C(nameRow),C(varRow),C(typeRow));
@@ -106,55 +125,14 @@ for i = 1:length(curCol)
 end
 rigidBodyTables.RemainingMarkers.Properties.VariableNames = curCol;
 
-
-%% Need to add plotting back in
-% % Plot, if user specified
-% if cfg.plot
-% 	figure;
-% 	set(gcf,'Position',[1 1 1000 900]);
-% 	subplot(3,1,1);
-% 	plot(motionImport.Time,motionImport.posx,'r','LineWidth',2);
-% 	set(gca,'FontSize',12);
-% 	ylabel('Distance','FontSize',16);
-% 	title('Rigid Body Position: X','FontSize',16);
-% 	
-% 	subplot(3,1,2);
-% 	plot(motionImport.Time,motionImport.posy,'g','LineWidth',2);
-% 	set(gca,'FontSize',12);
-% 	ylabel('Distance','FontSize',16);
-% 	title('Rigid Body Position: Y','FontSize',16);
-% 	
-% 	subplot(3,1,3);
-% 	plot(motionImport.Time,motionImport.posz,'b','LineWidth',2);
-% 	set(gca,'FontSize',12);
-% 	ylabel('Distance','FontSize',16);
-% 	title('Rigid Body Position: Z','FontSize',16);
-% 	xlabel('Time (s)','FontSize',16);
-% 
-% 	figure;
-% 	set(gcf,'Position',[1 1 1000 900]);
-% 	subplot(3,1,1);
-% 	plot(motionImport.Time,motionImport.orix,'r','LineWidth',2);
-% 	set(gca,'FontSize',12);
-% 	ylabel('Angle','FontSize',16);
-% 	title('Rigid Body Rotation: X','FontSize',16);
-% 	
-% 	subplot(3,1,2);
-% 	plot(motionImport.Time,motionImport.oriy,'g','LineWidth',2);
-% 	set(gca,'FontSize',12);
-% 	ylabel('Angle','FontSize',16);
-% 	title('Rigid Body Rotation: Y','FontSize',16);
-% 	
-% 	subplot(3,1,3);
-% 	plot(motionImport.Time,motionImport.oriz,'b','LineWidth',2);
-% 	set(gca,'FontSize',12);
-% 	ylabel('Angle','FontSize',16);
-% 	title('Rigid Body Rotation: Z','FontSize',16);
-% 	xlabel('Time (s)','FontSize',16);
-% end
+% Add in the cfgs
+rigidBodyTables.cfg = cfg;
 
 end
 
+%% Subfunctions
+% Method to combine multiple rows of comma delimited elements, accounting
+% for some empty elements.
 function combinedString = combineStrings(varargin)
     % Split each string into cell arrays, preserving empty elements
     strings = cellfun(@(x) regexp(x{1}, ',', 'split'), varargin, 'UniformOutput', false);
@@ -183,23 +161,13 @@ function combinedString = combineStrings(varargin)
 end
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+% Remove unwanted inputs from a structure (i.e. cfg structure) so that
+% nothing extra is passed to the output cfg. 
+function structOut = removeFields(structIn, keepFields)
+	structFields = fieldnames(structIn);
+	removedFields = setdiff(structFields, keepFields);
+	structOut = rmfield(structIn, removedFields);
+	if ~isempty(removedFields)
+		fprintf('The following fields were removed: %s\n', strjoin(removedFields, ', '))
+	end
+end
