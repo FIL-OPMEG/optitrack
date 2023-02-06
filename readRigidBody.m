@@ -20,7 +20,7 @@ function [rigidBodyTables] = readRigidBody(cfg)
 % MIT License
 %__________________________________________________________________________
 
-%% Set default values
+%% Check cfg
 if ~isfield(cfg, 'filename')
 	error('You must specifiy a filename');
 else
@@ -29,16 +29,11 @@ else
 	end
 end
 
-if ~isfield(cfg, 'plot')
-    cfg.plot = false;
-	disp("No summary plot requested (specify cfg.plot = true to enable)");
-end
-
 % Remove anything else in the cfg
-allowedFieldnames = {'plot','filename'};
+allowedFieldnames = {'filename'};
 cfg = removeFields(cfg,allowedFieldnames);
 
-%% Start of function proper
+%% Read in the file
 % Open the file
 fid = fopen(cfg.filename);
 
@@ -80,7 +75,7 @@ columnNames = regexprep(columnNames, '[":]', '');
 motionImport = readtable(cfg.filename, 'ReadVariableNames', false,'Range', dataRow);
 motionImport.Properties.VariableNames = columnNames;
 
-%% Separate into rigid bodies and markers
+%% Organise into rigid bodies and markers
 % Identify the name and number of rigid bodies imported
 % Get for strings after '_RigidBody_' in columnNames and check for unique
 % ones.
@@ -114,16 +109,20 @@ end
 
 % Collect up any markers that are just on their own
 cols = contains(columnNames,'_Marker_');
-rigidBodyTables.RemainingMarkers = motionImport(:,cols);
-
-% Tidy this up too
-curCol = rigidBodyTables.RemainingMarkers.Properties.VariableNames;
-for i = 1:length(curCol)
-	curCol{i} = regexprep(curCol{i}, '_Marker_', '');
-	curCol{i} = regexprep(curCol{i}, '^_+', '');
-	curCol{i} = regexprep(curCol{i}, '_+', '_');
+if any(cols)
+	rigidBodyTables.RemainingMarkers = motionImport(:,cols);
+	
+	% Tidy this up too
+	curCol = rigidBodyTables.RemainingMarkers.Properties.VariableNames;
+	for i = 1:length(curCol)
+		curCol{i} = regexprep(curCol{i}, '_Marker_', '');
+		curCol{i} = regexprep(curCol{i}, '^_+', '');
+		curCol{i} = regexprep(curCol{i}, '_+', '_');
+	end
+	rigidBodyTables.RemainingMarkers.Properties.VariableNames = curCol;
+else
+	disp("No additional markers found");
 end
-rigidBodyTables.RemainingMarkers.Properties.VariableNames = curCol;
 
 % Add in the cfgs
 rigidBodyTables.cfg = cfg;
@@ -134,13 +133,22 @@ end
 % Method to combine multiple rows of comma delimited elements, accounting
 % for some empty elements.
 function combinedString = combineStrings(varargin)
-    % Split each string into cell arrays, preserving empty elements
-    strings = cellfun(@(x) regexp(x{1}, ',', 'split'), varargin, 'UniformOutput', false);
+    % Remove '_' that might have been used in naming conventions.
+	varargin2 = cellfun(@(x) regexprep(x{1},'_',''), varargin, 'UniformOutput', false);
+
+	% Split each string into cell arrays, preserving empty elements
+	strings = cellfun(@(x) regexp(x, ',', 'split'), varargin2, 'UniformOutput', false);
     
     % Check that all strings have the same number of elements
     numElements = cellfun(@numel, strings);
-    if numel(unique(numElements)) ~= 1
-        error('All input strings must have the same number of elements');
+
+	% If they don't try and make them all the same length by adding to the
+	% end. Will work if the file is a proper csv...
+    while numel(unique(numElements)) ~= 1
+		[minElement, minIdx] = min(numElements);
+		maxElement = max(numElements);
+		strings{minIdx} = [strings{minIdx}, cell(1,maxElement - minElement)];
+		numElements = cellfun(@numel, strings);
     end
     
     % Concatenate the elements, preserving empty elements
@@ -159,7 +167,6 @@ function combinedString = combineStrings(varargin)
     combinedString = strjoin(combinedString, ',');
 	combinedString = regexp(combinedString, ',', 'split');
 end
-
 
 % Remove unwanted inputs from a structure (i.e. cfg structure) so that
 % nothing extra is passed to the output cfg. 
