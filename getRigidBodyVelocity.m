@@ -32,7 +32,7 @@ if ~isfield(cfg,'sg_freq')
 end
 
 % Plot or not
-if ~isfield(cfg.plot)
+if ~isfield(cfg,'plot')
 	cfg.plot = false;
 end
 
