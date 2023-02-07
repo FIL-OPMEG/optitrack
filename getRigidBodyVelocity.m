@@ -15,24 +15,24 @@ function [linearVelocityMag,angularVelocityMag,spatialVelocityMag] = getRigidBod
 
 %% Set defaults
 % Find the sample rate if not specified.
-if isempty(cfg.sampleRate)
+if ~isfield(cfg,'sampleRate')
 	cfg.sampleRate = round(rigidBodyT.Frame(end)/rigidBodyT.Time(end));
 	disp("Setting sample rate automatically. Sample rate = " + cfg.sampleRate + "Hz");
 end
 
 % Default Savitzky-Golay settings
-if isempty(cfg.sg_order)
+if ~isfield(cfg,'sg_order')
 	cfg.sg_order = 2;
 	disp("Setting Savitzky-Golay filter order to default: " + cfg.sg_order);
 end
 
-if isempty(cfg.sg_freq)
+if ~isfield(cfg,'sg_freq')
 	cfg.sg_freq = 2;
 	disp("Setting Savitzky-Golay filter order to default: " + cfg.sg_freq);
 end
 
 % Plot or not
-if isempty(cfg.plot)
+if ~isfield(cfg.plot)
 	cfg.plot = false;
 end
 
