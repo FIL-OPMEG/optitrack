@@ -1,4 +1,4 @@
-function [ MovementDataOut, OPMdataOut ] = syncOptitrackAndOPMdata( MovementData, OPMdata, varargin )
+function [ MovementDataOut, OPMdataOut, samples ] = syncOptitrackAndOPMdata( MovementData, OPMdata, varargin )
 % Synchronise OPM and Optitrack recordings
 % Trims and resamples each dataset. Should occur before epoching.
 %
@@ -180,6 +180,7 @@ if ~params.LengthsAlreadyMatch
                 cfg.latency = [time(samples(1)), time(end)];
             end
             OPMdataOut = ft_selectdata(cfg, OPMdata);
+            OPMdataOut.time{1} = OPMdataOut.time{1} - OPMdataOut.time{1}(1);
             time = OPMdataOut.time{1};
         case 'matrix'
             if length(samples) == 2
@@ -208,6 +209,10 @@ if ~params.LengthsAlreadyMatch
                 % - Rigid body markers
                 for i = 1:size(MovementData.markers.rigidbodymarkers,2)
                     MovementData.markers.rigidbodymarkers(i).data(trim_idxs,:) = [];
+                end
+                % - Rigid bodies
+                for i = 1:length(MovementData.rigidbodies)
+                    MovementData.rigidbodies(i).data(trim_idxs,:) = [];
                 end
                 MovementData.time(trim_idxs) = [];
                 
