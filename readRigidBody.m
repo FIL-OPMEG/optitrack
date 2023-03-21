@@ -70,9 +70,8 @@ cfg = convertToInt(cfg);
 % Make the variable names from the rows
 columnNames = combineStrings(C(objRow),C(nameRow),C(varRow),C(typeRow));
 
-% Remove " and : and replace with a space
-columnNames = regexprep(columnNames, '[":]', '');
-
+% Remove " and : and . and replace with a space
+columnNames = regexprep(columnNames, '[":.]', '');
 
 % Read in the rest of the file, using the row after the row with "Frame" as column names
 motionImport = readtable(cfg.filename, 'ReadVariableNames', false,'Range', dataRow);
