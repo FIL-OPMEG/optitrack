@@ -28,7 +28,7 @@ end
 
 MovementData_new = MovementData;
 
-% Through a warning message if tfinal and tinit are apart by more than 500 ms
+% Throw a warning message if tfinal and tinit are apart by more than 500 ms
 if (max(tfinal) - max(tinit))^2 > 0.5 || (min(tfinal) - min(tinit))^2 > 0.5
     warning('Sampled times are not well matched; significant extrapolation will be required');
 end

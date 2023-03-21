@@ -1,4 +1,4 @@
-function [ MagPos, MagOri ] = getMagPosOriOverTime( MovementData, MarkerPosMRI, D )
+function [ MagPos, MagOri, R, T ] = getMagPosOriOverTime( MovementData, MarkerPosMRI, D )
 %function [ MagPos, MagOri ] = getMagPosOriOverTime( MovementData, MarkerPosMRI, D )
 %   Get the magnetometer positions and orientations over the course of an
 %   experiment. Uses the Kabsch method to match the position of markers in
@@ -35,21 +35,21 @@ magO_MRI = D.sensors('MEG').chanori';
 % Find rotation and translation between MRI and room spaces using Kabsch
 % method
 markerPos_Camera = [];
-for i = 1:length(MovementData.markers.labeledmarkers)
-    markerPos_Camera = cat(3, markerPos_Camera, MovementData.markers.labeledmarkers(i).data');
+for i = 1:length(MovementData.markers.rigidbodymarkers)
+    markerPos_Camera = cat(3, markerPos_Camera, MovementData.markers.rigidbodymarkers(i).data(:,1:3)');
 end
 
 A_trans = MarkerPosMRI;
-CA_trans = mean(A_trans, 2);
+CA_trans = mean(A_trans, 1);
 R = zeros(3, 3, size(markerPos_Camera, 2));
 T = zeros(3, size(markerPos_Camera,2));
 for j = 1:size(markerPos_Camera,2)
-    B_trans = squeeze(markerPos_Camera(:,j,:));
-    CB_trans = mean(B_trans, 2);
-    [U,~,V] = svd((A_trans - repmat(CA_trans, 1, 3))*(B_trans - repmat(CB_trans, 1, 3))');
+    B_trans = transpose(squeeze(markerPos_Camera(:,j,:)));
+    CB_trans = mean(B_trans, 1);
+    [U,~,V] = svd((A_trans - CA_trans)'*(B_trans - CB_trans));
     d = det(V*U');
-    R(:,:,j) = V*[1 0 0; 0 1 0; 0 0 d]*U';
-    T(:,j) = CB_trans - R(:,:,j)*CA_trans;
+    R(:,:,j) = V*[1 0 0; 0 1 0; 0 0 sign(d)]*U';
+    T(:,j) = CB_trans' - R(:,:,j)*CA_trans';
 end
 
 % Get in camera space

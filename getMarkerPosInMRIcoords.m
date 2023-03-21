@@ -16,8 +16,8 @@ function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, mar
 %   - MovementData: The optitrack data to match the markers to. Currently
 %       only set up for data from csv2mat_sm. 
 %   - radAxis: radial axis of the scanner-cast. String s.t. if OPM Z axis
-%       is radial, set to 'RAD', else if Y axis is radial to the head, set
-%       to 'TAN'. Default 'TAN'
+%       is radial, set to 'Z', else if Y axis is radial to the head, set
+%       to 'Y'. Default 'Y'
 %
 % OUTPUT:
 %   - MarkerPosMRI: Native space coordinates of markers. 
@@ -33,7 +33,7 @@ function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, mar
 
 % Set default radial axis
 if nargin < 5
-    radAxis = 'TAN';
+    radAxis = 'Y';
 end
 
 % Import table of info
@@ -52,23 +52,28 @@ catch
 end
 
 % Add the height of the marker
+rad_ax = zeros(length(markerHeights), 3);
 for i = 1:length(markerHeights)
-    try
-        if strcmp(radAxis, 'RAD')
-            markersP(i,:) = markersP(i,:) +...
-                markerHeights(i)*[scannerCast.Ox_RAD(idx(i)), scannerCast.Oy_RAD(idx(i)), scannerCast.Oz_RAD(idx(i))];
-        elseif strcmp(radAxis, 'TAN')
-            markersP(i,:) = markersP(i,:) +...
-                markerHeights(i)*[scannerCast.Ox_TAN(idx(i)), scannerCast.Oy_TAN(idx(i)), scannerCast.Oz_TAN(idx(i))];
+    if ismember('Ox_RAD', scannerCast.Properties.VariableNames)
+        if strcmp(radAxis, 'Z')
+            rad_ax(i,:) = [scannerCast.Ox_RAD(idx(i)), scannerCast.Oy_RAD(idx(i)), scannerCast.Oz_RAD(idx(i))];
+        elseif strcmp(radAxis, 'Y')
+            rad_ax(i,:) = [scannerCast.Ox_TAN(idx(i)), scannerCast.Oy_TAN(idx(i)), scannerCast.Oz_TAN(idx(i))];
         end
-    catch
-        if strcmp(radAxis, 'RAD')
-            markersP(i,:) = markersP(i,:) -...
-                markerHeights(i)*[scannerCast.Z_x(idx(i)), scannerCast.Z_y(idx(i)), scannerCast.Z_z(idx(i))];
-        elseif strcmp(radAxis, 'TAN')
-            markersP(i,:) = markersP(i,:) +...
-                markerHeights(i)*[scannerCast.Y_x(idx(i)), scannerCast.Y_y(idx(i)), scannerCast.Y_z(idx(i))];
+    elseif ismember('Ox_Z', scannerCast.Properties.VariableNames)
+        if strcmp(radAxis, 'Z')
+            rad_ax(i,:) = [scannerCast.Ox_Z(idx(i)), scannerCast.Oy_Z(idx(i)), scannerCast.Oz_Z(idx(i))];
+        elseif strcmp(radAxis, 'Y')
+            rad_ax(i,:) = [scannerCast.Ox_Y(idx(i)), scannerCast.Oy_Y(idx(i)), scannerCast.Oz_Y(idx(i))];
         end
+    elseif ismember('Z_x', scannerCast.Properties.VariableNames)
+        if strcmp(radAxis, 'Z')
+            rad_ax(i,:) = [scannerCast.Z_x(idx(i)), scannerCast.Z_y(idx(i)), scannerCast.Z_z(idx(i))];
+        elseif strcmp(radAxis, 'Y')
+            rad_ax(i,:) = [scannerCast.Y_x(idx(i)), scannerCast.Y_y(idx(i)), scannerCast.Y_z(idx(i))];
+        end
+    else
+        error('Scanner-cast table_of_info format not recognised.')
     end
 end
 
@@ -97,36 +102,60 @@ end
 % OptiTrack) to get the positions from the headcast and the numbers from
 % the OptiTrack
 moving = pOptiTrackInit;
-fixed = markersP';
-[TR, TT, ER] = icp(fixed, moving, 10);
-iter = 1;
-% Reinitialise if stuck in local minimum
-while ER(end) > 10
-    moving = TR * moving + TT;
-    
-    % Random rotation
-    randRot = randn(1, 3);
-    R = [1 0 0; 0 cos(randRot(1)) -sin(randRot(1)); 0 sin(randRot(1)) cos(randRot(1))]*...
-        [cos(randRot(2)) 0 sin(randRot(2)); 0 1 0; -sin(randRot(2)) 0 cos(randRot(2))]*...
-        [cos(randRot(3)) -sin(randRot(3)) 0; sin(randRot(3)) cos(randRot(3)) 0; 0 0 1];
-    clear randRot
-    T = 0.1*randn(3,1);
-    
-    % New moving
-    moving = R*moving + T;
-    clear R T
-    
-    % Try again
-    [TR, TT, ER] = icp(fixed, moving, 100);
-    
-    iter = iter + 1;
-    if iter > 1000
-        fprintf('Reached maximum number of iterations\n');
-        break;
-        %error('MRI and optitrack coordinates could not be matched. Ensure the correct scanner-cast slots and heights have been used.');
+er_neg_or_pos = [0,0];
+reached_max_iter_check = 0;
+
+for neg_or_pos_ax = 1:2 % check to mean the user doesn't need to know 
+    % whether the height of the marker should be added or subtracted along the radial helmet axis
+
+    if neg_or_pos_ax == 1
+        markersP = markersP + repmat(markerHeights', 1, 3).*rad_ax;
+    else
+        markersP = markersP - repmat(markerHeights', 1, 3).*rad_ax;
     end
+    fixed = markersP';
+    [TR, TT, ER] = icp(fixed, moving, 10);
+    iter = 1;
+    % Reinitialise if stuck in local minimum
+    while ER(end) > 10
+        moving = TR * moving + TT;
+        
+        % Random rotation
+        randRot = randn(1, 3);
+        R = [1 0 0; 0 cos(randRot(1)) -sin(randRot(1)); 0 sin(randRot(1)) cos(randRot(1))]*...
+            [cos(randRot(2)) 0 sin(randRot(2)); 0 1 0; -sin(randRot(2)) 0 cos(randRot(2))]*...
+            [cos(randRot(3)) -sin(randRot(3)) 0; sin(randRot(3)) cos(randRot(3)) 0; 0 0 1];
+        clear randRot
+        T = 0.1*randn(3,1);
+        
+        % New moving
+        moving = R*moving + T;
+        clear R T
+        
+        % Try again
+        [TR, TT, ER] = icp(fixed, moving, 100);
+        
+        iter = iter + 1;
+        if iter > 1000
+            if neg_or_pos_ax == 1
+                reached_max_iter_check = 1;
+            end
+            if neg_or_pos_ax == 2 && reached_max_iter_check
+                fprintf('Reached maximum number of iterations\n');
+            end
+            break;
+            %error('MRI and optitrack coordinates could not be matched. Ensure the correct scanner-cast slots and heights have been used.');
+        end
+    end
+    TR_tmp{neg_or_pos_ax} = TR;
+    TT_tmp{neg_or_pos_ax} = TT;
+    er_neg_or_pos(neg_or_pos_ax) = ER(end);
+    clear idxs
 end
-clear idxs
+
+[~, ax_ind] = min(er_neg_or_pos);
+TR = TR_tmp{ax_ind};
+TT = TT_tmp{ax_ind};
 
 % Label markersP by nearest OptiTrack marker after transformation
 moving = TR*moving + TT;
