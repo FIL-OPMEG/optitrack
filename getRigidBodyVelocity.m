@@ -5,7 +5,7 @@ function [linearVelocityMag,angularVelocityMag,spatialVelocityMag] = getRigidBod
 %
 % motionImport = table from readRigidBody function. 
 % 
-% cfg.sg_filt = bool; % Apply a Savitzky-Golay filter (default = true).
+% cfg.sg_filter = bool; % Apply a Savitzky-Golay filter (default = true).
 % cfg.sg_freq = int; % Frequency of Savitzky-Golay filter (e.g. 2Hz = 0.5s)
 % cfg.sg_order = int; % Order of Savitzky-Golay filter (default = 2).
 % cfg.sampleRate = int; % fs, e.g. 120 or rigidBodyTables.cfg;

@@ -5,7 +5,6 @@ function [rigidBodyTables] = readRigidBody(cfg)
 % 
 % Input:
 % cfg.filename = path
-% cfg.plot = true or false;
 %
 % Output is a structure containing a field for each rigid body in the file.
 % Those fields include the rigid body 6DOF info in one table and any
