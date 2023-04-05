@@ -12,7 +12,7 @@ function [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries(cfg)
 % individual sensor positions is calculated. These matrices are then
 % applied to the whole rigidBodyT timeseries.
 % 
-% % Example use: 
+% % Example use:
 % % Read in sensor positions
 % cfg				= [];
 % cfg.folder        = 'C:\Users\nalexander\OneDrive - University College London\RobNicShared\Filbury OPM Study\stlfiles\sub-002Y\sensors';
@@ -38,7 +38,7 @@ function [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries(cfg)
 % cfg.longStalkTranslation	= [-1.65, -57.2, -5.35];
 % cfg.rigidBodyT			= rigidBodyT.Scannercast_XXX.RigidBody; % Provide the rigid body timeseries table
 % cfg.plot					= true; % Whether to plot some outputs. Recommended.
-% 
+% [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries(cfg);
 % Author:	Nicholas Alexander (n.alexander@ucl.ac.uk)
 % MIT License
 
