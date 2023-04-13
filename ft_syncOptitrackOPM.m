@@ -11,7 +11,9 @@ function [MovementDataOut, OPMdataOut ] = ft_syncOptitrackOPM(cfg, MovementData,
 %
 % cfg is a configuration structure that should contain
 %   cfg.trigger     = logical array corresponding to on/off times of the
-%                     mocap recording
+%                     mocap recording OR string corresponding to the
+%                     appropriate trigger channel in the OPM data OR array
+%                     of data from the appropriate trigger channel
 %
 % In addition the following cfg options are supported:
 %   cfg.rigidbody   = cell array of rigid body names to process. If not
@@ -23,6 +25,7 @@ function [MovementDataOut, OPMdataOut ] = ft_syncOptitrackOPM(cfg, MovementData,
 %                     interp1 for more info)
 %
 % Authors:  Robert Seymour, 2023    (rob.seymour@ucl.ac.uk) 
+%           Nicholas Alexxander, 2023
 %           (built on original code by Steph Mellor, UCL)
 %
 % MIT License
@@ -59,13 +62,26 @@ if islogical(trigger)
     if ~sum(diff(trigger) == 1) == 1
         error('Trigger needs to go ON (i.e. change from 0-1) ONLY once');
     end
-    
-%% If user has specified an array of data try to extract a trigger
-else
-    ft_warning('Only logical triggers fully supported for the moment');
-   
+
+%% If user has specified a character or array of data try to extract a trigger
+else   
     % Below is a work-in-progress option for the user to use a trigger
     % channel in their data
+
+    % If user has specified a channel as a string try and find the OPM data
+    % corresponding to that channel
+    if ischar(cfg.trigger)
+        trigger_chan = cfg.trigger;
+        trigger_chan_pos = find(ismember(OPMdata.label,trigger_chan));
+
+        % Check if it's found a channel
+        if isempty(trigger_chan_pos)
+            warning(['Cannot find cfg.trigger = ' cfg.trigger ...
+                ' channel in the OPM data']);
+        end
+
+        cfg.trigger = OPMdata.trial{1}(trigger_chan_pos,:);
+    end
 
 %     % Check size
 %     if length(trigger) ~= size(OPMdata.trial{1},2)
@@ -113,6 +129,7 @@ else
         trigger = logical(trigger);
     end
 end
+
 %% Resample OPM data if required
 if cfg.resamplefs ~= OPMdata.fsample
     disp(['Resampling the OPM data to ' num2str(OPMdata.fsample) 'Hz']);
