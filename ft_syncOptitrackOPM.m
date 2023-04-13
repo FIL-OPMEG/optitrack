@@ -30,7 +30,7 @@ function [MovementDataOut, OPMdataOut ] = ft_syncOptitrackOPM(cfg, MovementData,
 
 %% Set the defaults
 if ~isfield(cfg, 'trigger')
-    ft_warning(['Please provide a trigger!']);
+    ft_warning('Please provide a trigger!');
     return
 end
 
@@ -84,7 +84,7 @@ else
     if length(samples) > 5
         error(['Too many steps in the trigger were found. ' ...
             'Check the trigger is only on for one time period.']);
-    elseif length(samples) == 0
+	elseif isempty(samples)
         error('No trigger steps found. Check given trigger channel.');
     elseif length(samples) == 1
         warning(['Only one step in the trigger was found. It will be'...
@@ -112,7 +112,7 @@ else
         trigger(samples(1):samples(3)) = 1;
         trigger = logical(trigger);
     end
-
+end
 %% Resample OPM data if required
 if cfg.resamplefs ~= OPMdata.fsample
     disp(['Resampling the OPM data to ' num2str(OPMdata.fsample) 'Hz']);
@@ -198,7 +198,7 @@ for f = 1:length(fields)
 
         % Replace frame with integers
         try
-            rgb_new.Frame = [0:size(rgb_new,1)-1]';
+            rgb_new.Frame = (0:size(rgb_new,1)-1)';
         catch
         end
 
