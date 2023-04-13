@@ -59,6 +59,7 @@ if islogical(trigger)
     if ~sum(diff(trigger) == 1) == 1
         error('Trigger needs to go ON (i.e. change from 0-1) ONLY once');
     end
+    
 %% If user has specified an array of data try to extract a trigger
 else
     ft_warning('Only logical triggers fully supported for the moment');
@@ -66,10 +67,10 @@ else
     % Below is a work-in-progress option for the user to use a trigger
     % channel in their data
 
-    % Check size
-    if length(trigger) ~= size(OPMdata.trial{1},2)
-        error('Length of trigger and data need to be identical...');
-    end
+%     % Check size
+%     if length(trigger) ~= size(OPMdata.trial{1},2)
+%         error('Length of trigger and data need to be identical...');
+%     end
 
     % Find edges of trigger (where it steps up and steps down)
      [~, samples] = findpeaks(abs(diff(cfg.trigger)), ...
@@ -124,13 +125,14 @@ end
 if ~isfield(cfg,'rigidbody')
     fields = fieldnames(MovementData);
     fields = fields(~strcmp(fields,'cfg'));
-
-    tfinal = OPMdata.time{1};
-    tfinal = tfinal(trigger);
-    tfinal = tfinal-tfinal(1);
 else
     fields = cfg.rigidbody;
 end
+
+%% Get time
+tfinal = OPMdata.time{1};
+tfinal = tfinal(trigger);
+tfinal = tfinal-tfinal(1);
 
 %% Resample the Movement Data
 disp(['Resampling the mocap data to ' num2str(cfg.resamplefs) 'Hz'])
@@ -140,7 +142,6 @@ MovementDataOut = [];
 for f = 1:length(fields)
     % Get a list of sub-fields
     subfields = fieldnames(MovementData.(fields{f}));
-
     % For each subfield (e.g. RigidBody, RigidBodyMarker)
     for sf = 1:length(subfields)
 
@@ -149,8 +150,9 @@ for f = 1:length(fields)
         disp(['Resampling: ' (fields{f}) '.' (subfields{sf})]);
 
         % Get correct data
+        
         rgb = MovementData.(fields{f}).(subfields{sf});
-
+        
         % Get initial time
         tinit = rgb.Time;
 
