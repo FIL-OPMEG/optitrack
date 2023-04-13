@@ -151,8 +151,14 @@ if ~params.LengthsAlreadyMatch
                     OPMdata.time(samples(2)) - OPMdata.time(samples(1)),2))...
                     's']);
         end
-     disp(['Length of Optitrack data: ' num2str(round(...
-         MovementData.time(end),2)) 's']);
+		switch MovementDataType
+			case 'matrix'
+				disp(['Length of Optitrack data: ' num2str(round(length(MovementData(:,1)) / 120, 2)) 's']);
+			case 'struct'
+				disp(['Length of Optitrack data: ' num2str(round(...
+					MovementData.time(end),2)) 's']);
+		end
+		
     end
     
     % Trim OPM data
@@ -263,11 +269,12 @@ if ~params.ResampleOPMdata
             MovementDataOut = interp1(t0, MovementData, t1);
     end
     
-    % Raise warning if downsampling as data will be filtered with
-    % Butterworth filter
-    if 1/mean(diff(t1)) < 1/mean(diff(MovementData.time))
-        warning(sprintf('You are downsampling the Movement Data so the data will be filtered to reduce aliasing.'));
-    end
+%	  %%%% Needs updating to accept matrix %%%% tmp comment out
+%     % Raise warning if downsampling as data will be filtered with
+%     % Butterworth filter
+%     if 1/mean(diff(t1)) < 1/mean(diff(MovementData.time))
+%         warning(sprintf('You are downsampling the Movement Data so the data will be filtered to reduce aliasing.'));
+%     end
 else
     MovementDataOut = MovementData;
     % Find the vector you're resampling to
