@@ -1,12 +1,30 @@
-function [pos, euler, linearVelocityMag, markerLinearVelocityAvg] = processRigidBodyT(cfg,rigidBodyT)
+function [pos, euler, rigidBodySpeed, markerSpeedAvg, angularVelocityMag] = processRigidBodyT(cfg,rigidBodyT)
 % Function to plot rigid body positions.
-
-% % Example usage
+%
+% Example use:
+% % Get exported mocap data filename
+% % Setup bids
+% bids = [];
+% bids.sub = '001';
+% bids.ses = '001';
+% bids.run = '001';
+% bids.task = 'yourTask';
+% bids.directory = 'D:/YOUR/BIDS/FOLDER';
+% 
+% % BIDS spec cfg
+% cfg = [];
+% cfg.category	= 'mot'; 
+% cfg.description	= 'ScannercastRigidBody'; 
+% cfg.type		= '.csv'; 
+% cfg.derivative	= false;
+% cfg.detailed	= true;
+% [~, ~, combined] = bidsFilename(cfg, bids);
+% 
 % % Read in the optitrack data
 % cfg			= [];
 % cfg.filename	= combined;
 % rigidBodyT	= readRigidBody(cfg);
-
+% 
 % % Plot
 % cfg					= [];
 % cfg.rigidBodyLabel	= 'Scannercast';
@@ -15,18 +33,99 @@ function [pos, euler, linearVelocityMag, markerLinearVelocityAvg] = processRigid
 % cfg.timeWindow		= 30;
 % cfg.rotSmooth			= 0.3;
 % cfg.unwrapRot			= true;
-% [pos, euler] = plotRigidBodyT(cfg,rigidBodyT);
+% cfg.sgOrder			= 2;
+% cfg.sgFreq			= 3;
+% [pos, euler, rigidBodySpeed, markerSpeedAvg, angularVelocityMag] = processRigidBodyT(cfg,rigidBodyT);
+
 
 %% Start of function
 % Filter design for positions
+fs = round(str2double(rigidBodyT.cfg.ExportFrameRate));
 if (isfield(cfg,'lowpass') && ~isempty(cfg.lowpass))
 	d = designfilt('lowpassiir', 'FilterOrder', 8, 'HalfPowerFrequency',cfg.lowpass,...
-		'SampleRate', round(str2double(rigidBodyT.cfg.ExportFrameRate)));
+		'SampleRate', fs);
 else
 	d = [];
 end
 
-%% Get position info (motive records Z = forward; Y = up, X = left)
+%% Process rigid body marker data
+% Identify number of markers on rigid body.
+cols = fieldnames(rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker);
+posMarkerCount = zeros(1,length(cols));
+for fieldIdx = 1:length(cols)
+	if regexp(cols{fieldIdx},'Marker\d.*')
+		posMarkerCount(fieldIdx) = str2double(regexp(cols{fieldIdx},'\d+','match'));
+	end
+end
+numMarkers = max(posMarkerCount);
+
+% Get the trajectories (dim = xyz_marker_t)
+markerSpeed = zeros(length(rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.('Marker1_X_Position')) - 1,numMarkers);
+traj = zeros(3,numMarkers,length(rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.('Marker1_X_Position')));
+qual = zeros(numMarkers,length(rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.('Marker1_X_Position')));
+for markIdx = 1:numMarkers
+	traj(1,markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_X_Position']);
+	traj(2,markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_Y_Position']);
+	traj(3,markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_Z_Position']);
+
+	% Lowpass filter
+	if ~isempty(d)
+		traj(1,markIdx,:) = filtfilt(d,squeeze(traj(1,markIdx,:)));
+		traj(2,markIdx,:) = filtfilt(d,squeeze(traj(2,markIdx,:)));
+		traj(3,markIdx,:) = filtfilt(d,squeeze(traj(3,markIdx,:)));
+	end
+
+	% When quality is 0 (i.e. no observed data) set traj to NaN
+	qual(markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_MarkerQuality']);
+	traj(:,markIdx,~(qual(markIdx,:) > 0)) = NaN;
+
+	% Get adjacent trajectories
+	dt = 1/round(str2double(rigidBodyT.cfg.ExportFrameRate));
+	
+	tmpX = squeeze(traj(1,markIdx,:));
+	tmpY = squeeze(traj(2,markIdx,:));
+	tmpZ = squeeze(traj(3,markIdx,:));
+	
+	% Create 3D arrays for the current and previous positions
+	prevPos = cat(2, tmpX(1:end-1), tmpY(1:end-1), tmpZ(1:end-1));
+	currPos = cat(2, tmpX(2:end), tmpY(2:end), tmpZ(2:end));
+	
+	% Compute the linear velocities
+	linearVelocity = (currPos - prevPos) / dt;
+	
+	% Compute the magnitudes of the linear velocities (speed)
+	markerSpeed(:,markIdx) = sqrt(sum(linearVelocity.^2, 2));
+	
+end
+
+% Process the marker velocity data
+% NaN mean
+markerSpeedAvg = arrayfun(@(x) mean(markerSpeed(x,~isnan(markerSpeed(x,:)))), 1:size(markerSpeed,1));
+markerNaNs = isnan(markerSpeedAvg);
+
+iVec = 1:numel(markerSpeedAvg); 
+markerSpeedAvg = interp1(iVec(~markerNaNs), markerSpeedAvg(~markerNaNs), iVec(~markerNaNs));
+
+% Interpolate nans for s-g filter
+
+if rem(fs,2) == 0
+	framelen = (cfg.sgFreq * fs) + 1; 
+else
+	framelen = cfg.sgFreq * fs; 
+end
+
+markerSpeedAvg = sgolayfilt(markerSpeedAvg, cfg.sgOrder, framelen);
+
+% Can be an issue with negative values (impossible). Set to zero.
+zerosIdx = markerSpeedAvg < 0;
+markerSpeedAvg(zerosIdx) = 0;
+markerSpeedAvg(markerNaNs) = NaN;
+
+%% Get position info of rigidbody (motive records Z = forward; Y = up, X = left)
+% Make sure there are 3 or more good quality markers available.
+% goodSegments = sum(qual > 0.8,1) > 2;
+goodSegments = sum(rigidBodyT.Scannercast.RigidBody.MeanMarkerError > 0) > 2;
+
 pos = [];
 pos.X = rigidBodyT.(cfg.rigidBodyLabel).RigidBody.X_Position;
 pos.Y = rigidBodyT.(cfg.rigidBodyLabel).RigidBody.Y_Position;
@@ -45,9 +144,11 @@ for i = 1:numel(fields)
 	if ~isempty(d)
 		pos.(fields{i}) = filtfilt(d, pos.(fields{i}));
 	end
+	
+	pos.(fields{i})(~goodSegments) = NaN;
 end
 
-%% Calculate the linear velocity (magnitude)
+%% Calculate the linear velocity and speed
 % Time delta
 dt = 1/round(str2double(rigidBodyT.cfg.ExportFrameRate));
 
@@ -55,11 +156,30 @@ dt = 1/round(str2double(rigidBodyT.cfg.ExportFrameRate));
 prevPos = cat(2, pos.X(1:end-1), pos.Y(1:end-1), pos.Z(1:end-1));
 currPos = cat(2, pos.X(2:end), pos.Y(2:end), pos.Z(2:end));
 
-% Compute the linear velocity over time (mm/s)
+% Remove bad segments if they are in either current or previous pos
+currPos(isnan(prevPos)) = NaN;
+prevPos(isnan(currPos)) = NaN;
+
+% Compute the linear velocity over time
 linearVelocity = (currPos - prevPos) / dt;
 
-% Compute the magnitudes of the linear velocities
-linearVelocityMag = sqrt(sum(linearVelocity.^2, 2));
+
+% Compute the magnitudes of the linear velocities (speed mm/s)
+rigidBodySpeed = sqrt(sum(linearVelocity.^2, 2));
+
+rbNaNs = isnan(rigidBodySpeed);
+
+iVec = 1:numel(rigidBodySpeed); 
+rigidBodySpeed = interp1(iVec(~rbNaNs), rigidBodySpeed(~rbNaNs), iVec(~rbNaNs));
+
+
+rigidBodySpeed = sgolayfilt(rigidBodySpeed, cfg.sgOrder, framelen);
+
+% Can be an issue with negative values due to s-g filter. Impossible, so set to zero.
+zerosIdx = rigidBodySpeed < 0;
+rigidBodySpeed(zerosIdx) = 0;
+
+rigidBodySpeed(rbNaNs) = NaN;
 
 %% Get rotation info and apply SLERP low pass filter
 quatRot = [];
@@ -106,69 +226,9 @@ for i = 1:length(angularVelocity) - 1
 	angularVelocityMag(i) = norm(angularVelocity(i+1) - angularVelocity(i));
 end
 
-%% Process rigid body marker data
-% Identify number of markers on rigid body.
-cols = fieldnames(rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker);
-posMarkerCount = zeros(1,length(cols));
-for fieldIdx = 1:length(cols)
-	if regexp(cols{fieldIdx},'Marker\d.*')
-		posMarkerCount(fieldIdx) = str2double(regexp(cols{fieldIdx},'\d+','match'));
-	end
-end
-numMarkers = max(posMarkerCount);
-
-% Get the trajectories (dim = xyz_marker_t)
-traj = zeros(3,numMarkers,length(rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker1_X_Position'])));
-for markIdx = 1:numMarkers
-	traj(1,markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_X_Position']);
-	traj(2,markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_Y_Position']);
-	traj(3,markIdx,:) = rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_Z_Position']);
-
-	% Lowpass filter
-	if ~isempty(d)
-		traj(1,markIdx,:) = filtfilt(d,squeeze(traj(1,markIdx,:)));
-		traj(2,markIdx,:) = filtfilt(d,squeeze(traj(2,markIdx,:)));
-		traj(3,markIdx,:) = filtfilt(d,squeeze(traj(3,markIdx,:)));
-	end
-
-	% When quality is 0 (i.e. no observed data) set traj to NaN
-	qual = (rigidBodyT.(cfg.rigidBodyLabel).RigidBodyMarker.(['Marker',num2str(markIdx),'_MarkerQuality']) > 0);
-	traj(:,markIdx,~qual) = NaN;
-
-	% Calculate the linear velocity (magnitude)
-	dt = 1/round(str2double(rigidBodyT.cfg.ExportFrameRate));
-	
-	tmpX = squeeze(traj(1,markIdx,:));
-	tmpY = squeeze(traj(2,markIdx,:));
-	tmpZ = squeeze(traj(3,markIdx,:));
-	
-	% Create 3D arrays for the current and previous positions
-	prevPos = cat(2, tmpX(1:end-1), tmpY(1:end-1), tmpZ(1:end-1));
-	currPos = cat(2, tmpX(2:end), tmpY(2:end), tmpZ(2:end));
-	
-	% Compute the linear velocities
-	linearVelocity = (currPos - prevPos) / dt;
-	
-	% Compute the magnitudes of the linear velocities
-	markerLinearVelocityMag(:,markIdx) = sqrt(sum(linearVelocity.^2, 2));
-	
-% 	% If there are gaps, apply a linear interpolation to them
-% 	if any(~qual)
-% 		traj(1,markIdx,:) = interp1(find(qual), squeeze(traj(1,markIdx, qual)), 1:numel(traj(1,markIdx,:)), 'linear', 'extrap');
-% 		traj(2,markIdx,:) = interp1(find(qual), squeeze(traj(2,markIdx, qual)), 1:numel(traj(2,markIdx,:)), 'linear', 'extrap');
-% 		traj(3,markIdx,:) = interp1(find(qual), squeeze(traj(3,markIdx, qual)), 1:numel(traj(3,markIdx,:)), 'linear', 'extrap');
-% 	end
-end
-
-% Process the marker velocity data
-% NaN mean
-markerLinearVelocityAvg = nanmean(markerLinearVelocityMag,2);
-
-linearVelocityMag = markerLinearVelocityAvg;
-
 
 %% Plot
-if cfg.plot
+if isfield(cfg,'plot') && cfg.plot
 	% Number of samples to plot at a time
 	samplesToPlot = cfg.timeWindow * round(str2double(rigidBodyT.cfg.ExportFrameRate));
 	
@@ -181,7 +241,7 @@ if cfg.plot
 	
 
 	%% Create a subplot for the position plot
-	subplot(3,3,1:2)
+	subplot(4,3,1:2)
 	
 	% Initial plot
 	plotHandleX = plot(t(1:samplesToPlot), pos.X(1:samplesToPlot), 'Color', [1 0.2 0.2], 'LineWidth', 2); hold on;
@@ -192,7 +252,7 @@ if cfg.plot
 	ylabel("Position (mm)")
 
 	%% Create a subplot for the Euler plot
-	subplot(3,3,4:5)
+	subplot(4,3,4:5)
 	
 	% Initial plot for Euler angles
 	plotHandleRoll = plot(t(1:samplesToPlot), eulerUnwrap.roll(1:samplesToPlot), 'Color', [1 0.2 0.2], 'LineWidth', 2); hold on;
@@ -203,7 +263,7 @@ if cfg.plot
 	ylabel("Euler Rotation (deg)")
 
 	%% Create a subplot for the 3D plot
-	h1 = subplot(3,3,3);
+	h1 = subplot(4,3,3);
 	
 	midpoint = round(mean([1, samplesToPlot]));
 
@@ -215,7 +275,10 @@ if cfg.plot
 	
 	q = [quatRot.W(midpoint), quatRot.X(midpoint), quatRot.Y(midpoint), quatRot.Z(midpoint)];
 	q = q/norm(q); % normalize quaternion
-	w = q(1); x = q(2); y = q(3); z = q(4);
+	w = q(1); 
+	x = q(2); 
+	y = q(3); 
+	z = q(4);
 	R = [1-2*y^2-2*z^2, 2*x*y-2*z*w, 2*x*z+2*y*w;
      	2*x*y+2*z*w, 1-2*x^2-2*z^2, 2*y*z-2*x*w;
      	2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x^2-2*y^2];
@@ -240,7 +303,7 @@ if cfg.plot
 
 	% Copy to another subplot and change view
 	% Copy the plot to another subplot
-	h2 = subplot(3,3,6);
+	h2 = subplot(4,3,6);
 	copyobj(allchild(h1), h2);
 	
 	axis equal;
@@ -255,7 +318,7 @@ if cfg.plot
 	view(h2, 90, 90);  
 
 	% And again
-	h3 = subplot(3,3,9);
+	h3 = subplot(4,3,9);
 	copyobj(allchild(h1), h3);
 	axis equal;
 	grid on;
@@ -265,16 +328,22 @@ if cfg.plot
 	view(h3, 0, 90);  
 
 
+	%% Plot rigid body speed
+	subplot(4,3,7:8)
+	plotHandleRbSpeed = plot(t(1:samplesToPlot), rigidBodySpeed(1:samplesToPlot), 'Color', 'k', 'LineWidth', 2); hold on;
+	ylim([0, max(rigidBodySpeed)])
 
-
-	%% Plot velocity info
-	subplot(3,3,7:8)
-	plotHandleVel = plot(t(1:samplesToPlot), linearVelocityMag(1:samplesToPlot), 'Color', 'k', 'LineWidth', 2); hold on;
-% 	ylim([0, max(linearVelocityMag)])
-% 	ylim([0, 400])
-	ylim([-300 300])
 	xlabel("Time (s)")
-	ylabel("Linear Vel Mag (mm/s)")
+	ylabel("Rigid Body Speed (mm/s)")
+
+	%% Plot average marker speed 
+	subplot(4,3,10:11)
+	plotHandleMarkSpeed = plot(t(1:samplesToPlot), markerSpeedAvg(1:samplesToPlot), 'Color', 'k', 'LineWidth', 2); hold on;
+	ylim([0, max(markerSpeedAvg)])
+
+	xlabel("Time (s)")
+	ylabel("Marker Avg Speed (mm/s)")
+
 
 	%% Plot with slider to change time window shown.
 	% Create a slider
@@ -284,13 +353,13 @@ if cfg.plot
 
 	% Create a listener for the slider
 	addlistener(slider, 'Value', 'PostSet', @(src, event) updatePlot(slider, plotHandleX, plotHandleY, plotHandleZ, ...
-		plotHandleRoll, plotHandlePitch, plotHandleYaw, quiverHandleX, quiverHandleY, quiverHandleZ, plotHandleVel,...
-		samplesToPlot, pos, eulerUnwrap, t, quatRot,linearVelocityMag,h1,h2,h3));
+		plotHandleRoll, plotHandlePitch, plotHandleYaw, quiverHandleX, quiverHandleY, quiverHandleZ, plotHandleRbSpeed,...
+		samplesToPlot, pos, eulerUnwrap, t, quatRot,rigidBodySpeed,h2,h3,plotHandleMarkSpeed,markerSpeedAvg));
 	
 	% Initial update
 	updatePlot(slider, plotHandleX, plotHandleY, plotHandleZ, ...
-		plotHandleRoll, plotHandlePitch, plotHandleYaw, quiverHandleX, quiverHandleY, quiverHandleZ, plotHandleVel,...
-		samplesToPlot, pos, eulerUnwrap, t, quatRot,linearVelocityMag,h1,h2,h3)
+		plotHandleRoll, plotHandlePitch, plotHandleYaw, quiverHandleX, quiverHandleY, quiverHandleZ, plotHandleRbSpeed,...
+		samplesToPlot, pos, eulerUnwrap, t, quatRot,rigidBodySpeed,h2,h3,plotHandleMarkSpeed,markerSpeedAvg)
 end
 
 if (isfield(cfg,'unwrapRot') && cfg.unwrapRot)
@@ -302,7 +371,7 @@ end
 
 function updatePlot(slider, plotHandleX, plotHandleY, plotHandleZ, ...
 		plotHandleRoll, plotHandlePitch, plotHandleYaw, quiverHandleX, quiverHandleY, quiverHandleZ, plotHandleVel,...
-		samplesToPlot, pos, eulerUnwrap, t, quatRot,linearVelocityMag,h1,h2,h3)
+		samplesToPlot, pos, eulerUnwrap, t, quatRot,rigidBodySpeed,h2,h3,plotHandleMarkSpeed,markerSpeedAvg)
 
     startIdx = round(slider.Value);
     endIdx = startIdx + samplesToPlot - 1;
@@ -355,17 +424,19 @@ function updatePlot(slider, plotHandleX, plotHandleY, plotHandleZ, ...
 		'UData', rot_axes(1,3), 'VData', rot_axes(2,3), 'WData', rot_axes(3,3));
 
 
-	% Update linear velocity plot
-    set(plotHandleVel, 'XData', t(startIdx:endIdx), 'YData', linearVelocityMag(startIdx:endIdx));
+	% Update speed plots
+	set(plotHandleVel, 'XData', t(startIdx:endIdx), 'YData', rigidBodySpeed(startIdx:endIdx));
+	set(plotHandleMarkSpeed, 'XData', t(startIdx:endIdx), 'YData', markerSpeedAvg(startIdx:endIdx));
+
 
     % Get the maximum absolute value across all data being plotted
     maxValPos = max(max([abs(pos.X(startIdx:endIdx)), abs(pos.Y(startIdx:endIdx)), abs(pos.Z(startIdx:endIdx))]));
     maxValEuler = max(max([abs(eulerUnwrap.roll(startIdx:endIdx)), abs(eulerUnwrap.pitch(startIdx:endIdx)), abs(eulerUnwrap.yaw(startIdx:endIdx))]));
     
     % Set Y-axis limits to include 0 and scale to the data
-	subplot(3,3,1:2)
+	subplot(4,3,1:2)
     ylim([-maxValPos, maxValPos]);
-	subplot(3,3,4:5)
+	subplot(4,3,4:5)
     ylim([-maxValEuler, maxValEuler]);
 end
 
