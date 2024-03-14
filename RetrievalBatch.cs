@@ -110,6 +110,9 @@ namespace MotiveBatchProcessor.Examples
         /// <returns>The result of gap filling.</returns>
         public Result ProcessTake(Take take, ProgressIndicator progress)
         {
+            // Remove solve, if solved already
+            take.RemoveSolve();
+
             // Set reconstruction settings to use.
             string fileName = "D:\\nicRobData\\reconstruction_settings_retrieval.mup";
             Result res = Settings.ImportMotiveProfile(fileName);
@@ -126,11 +129,12 @@ namespace MotiveBatchProcessor.Examples
 
             // Trim around gaps using smart trim
             TrimTails trimTails = new TrimTails();
-            trimTails.Automatic = true;
+            trimTails.Automatic = false;
+            trimTails.GapSizeThreshold = 2;
+            trimTails.LeadingTrimSize = 4;
+            trimTails.TrailingTrimSize = 4;
+            trimTails.MinimumSegmentSize = 4;
             trimTails.Process(take);
-
-            // Remove solve, if solved already
-            take.RemoveSolve();
 
             // Autolabel
             traj.Process(take, TrajectorizerOption.AutoLabel);
