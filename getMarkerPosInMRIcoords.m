@@ -1,4 +1,5 @@
-function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, markerScannerCastSlots, markerHeights, MovementData, radAxis )
+function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, ...
+    markerScannerCastSlots, markerHeights, MovementData, RigidBodyName, radAxis )
 %function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, markerScannerCastSlots, markerHeights, MovementData, radAxis )
 %   Get the position of each optitrack marker in the native MRI space of
 %   a participant's scanner-cast. Needed to get the magnetometer positions
@@ -15,6 +16,9 @@ function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, mar
 %       Double array with as many elements as markers.
 %   - MovementData: The optitrack data to match the markers to. Currently
 %       only set up for data from csv2mat_sm. 
+%   - RigidBodyName: Name of rigid body to match with MRI. Should be left
+%       empty ([]) if "old" (csv2mat_sm) function was used to read in OptiTrack
+%       data
 %   - radAxis: radial axis of the scanner-cast. String s.t. if OPM Z axis
 %       is radial, set to 'Z', else if Y axis is radial to the head, set
 %       to 'Y'. Default 'Y'
@@ -32,8 +36,11 @@ function [ MarkerPosMRI ] = getMarkerPosInMRIcoords( scannerCastTableOfInfo, mar
 %
 
 % Set default radial axis
-if nargin < 5
+if nargin < 6
     radAxis = 'Y';
+    if nargin < 5
+        RigidBodyName = [];
+    end
 end
 
 % Import table of info
@@ -45,10 +52,15 @@ try
 catch
     [~, idx, ~] = intersect(scannerCast.SlotNo, markerScannerCastSlots, 'stable');
 end
-try
+if ismember('Px', scannerCast.Properties.VariableNames)
     markersP = [scannerCast.Px(idx), scannerCast.Py(idx), scannerCast.Pz(idx)];
-catch
+elseif ismember('Position_x', scannerCast.Properties.VariableNames)
     markersP = [scannerCast.Position_x(idx), scannerCast.Position_y(idx), scannerCast.Position_z(idx)];
+elseif ismember('G2_P_X', scannerCast.Properties.VariableNames)
+    markersP = [scannerCast.G2_P_X(idx), scannerCast.G2_P_Y(idx), scannerCast.G2_P_Z(idx)];
+    tmpXOri = [scannerCast.G2_Ox_X(idx), scannerCast.G2_Oy_X(idx), scannerCast.G2_Oz_X(idx)];
+    tmpZOri = [scannerCast.G2_Ox_Z(idx), scannerCast.G2_Oy_Z(idx), scannerCast.G2_Oz_Z(idx)];
+    markersP = markersP + 1.9.*tmpXOri - 5.7*tmpZOri;
 end
 
 % Add the height of the marker
@@ -72,6 +84,12 @@ for i = 1:length(markerHeights)
         elseif strcmp(radAxis, 'Y')
             rad_ax(i,:) = [scannerCast.Y_x(idx(i)), scannerCast.Y_y(idx(i)), scannerCast.Y_z(idx(i))];
         end
+    elseif ismember('G2_Ox_X', scannerCast.Properties.VariableNames)
+        if strcmp(radAxis, 'Z')
+            rad_ax(i,:) = [scannerCast.G2_Ox_Z(idx(i)), scannerCast.G2_Oy_Z(idx(i)), scannerCast.G2_Oz_Z(idx(i))];
+        elseif strcmp(radAxis, 'Y')
+            rad_ax(i,:) = [scannerCast.G2_Ox_Y(idx(i)), scannerCast.G2_Oy_Y(idx(i)), scannerCast.G2_Oz_Y(idx(i))];
+        end
     else
         error('Scanner-cast table_of_info format not recognised.')
     end
@@ -81,20 +99,33 @@ end
 % in the Optitrack recording 
 
 % Get first non-NaN position of all markers in movement data
-nMarkers = length(MovementData.markers.labeledmarkers);
+if isempty(RigidBodyName)
+    nMarkers = length(MovementData.markers.labeledmarkers);
+else
+    nMarkers = (size(MovementData.(RigidBodyName).RigidBodyMarker, 2) - 2)/4;
+end
 pOptiTrackInit = NaN(3, nMarkers);
 counter = 1;
 while any(isnan(pOptiTrackInit(:)))
     for i = 1:nMarkers
-        pOptiTrackInit(:,i) = MovementData.markers.rigidbodymarkers(i).data(counter,1:3)';
+        if isempty(RigidBodyName)
+            pOptiTrackInit(:,i) = MovementData.markers.rigidbodymarkers(i).data(counter,1:3)';
+        else
+            pOptiTrackInit(:,i) = MovementData.(RigidBodyName).RigidBodyMarker{counter,4*i-1:4*i+1}';
+        end
     end
     counter = counter + 1;
 end
 
 % Multiply to get in mm
-if strcmp(MovementData.lengthUnits{:}, 'Centimeters')
+if isempty(RigidBodyName)
+    lu = MovementData.lengthUnits{:};
+else
+    lu = MovementData.cfg.LengthUnits;
+end
+if strcmp(lu, 'Centimeters')
     pOptiTrackInit = pOptiTrackInit*10;
-elseif strcmp(MovementData.lengthUnits{:}, 'Meters')
+elseif strcmp(lu, 'Meters')
     pOptiTrackInit = pOptiTrackInit*1000;
 end
 
@@ -109,11 +140,11 @@ for neg_or_pos_ax = 1:2 % check to mean the user doesn't need to know
     % whether the height of the marker should be added or subtracted along the radial helmet axis
 
     if neg_or_pos_ax == 1
-        markersP = markersP + repmat(markerHeights', 1, 3).*rad_ax;
+        markersP_height = markersP + repmat(markerHeights', 1, 3).*rad_ax;
     else
-        markersP = markersP - repmat(markerHeights', 1, 3).*rad_ax;
+        markersP_height = markersP - repmat(markerHeights', 1, 3).*rad_ax;
     end
-    fixed = markersP';
+    fixed = markersP_height';
     [TR, TT, ER] = icp(fixed, moving, 10);
     iter = 1;
     % Reinitialise if stuck in local minimum

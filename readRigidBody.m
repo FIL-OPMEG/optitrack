@@ -73,7 +73,10 @@ columnNames = combineStrings(C(objRow),C(nameRow),C(varRow),C(typeRow));
 columnNames = regexprep(columnNames, '[":.]', '');
 
 % Read in the rest of the file, using the row after the row with "Frame" as column names
-motionImport = readtable(cfg.filename, 'ReadVariableNames', false,'Range', dataRow);
+opts = detectImportOptions(cfg.filename);
+opts = setvartype(opts, opts.VariableNames, 'double');
+opts.DataLines = [dataRow Inf];
+motionImport = readtable(cfg.filename, opts, 'ReadVariableNames', false);
 motionImport.Properties.VariableNames = columnNames;
 
 %% Organise into rigid bodies and markers

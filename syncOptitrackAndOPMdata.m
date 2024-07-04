@@ -98,10 +98,15 @@ end
 
 % Check type of Movement Data entered
 if isstruct(MovementData)
-    MovementDataType = 'struct';
-    % Check that as a minimum, rigidbodies or markers fields exist
-    if ~(isfield(MovementData, 'rigidbodies') || isfield(MovementData, 'markers'))
-        error('Movement Data must have fields for at least 1 of rigid bodies or markers');
+    % Was it read in with csv2mat or eadRigidBody?
+    if isfield(MovementData, 'cfg')
+        MovementDataType = 'struct_readRB';
+    else
+        MovementDataType = 'struct_csv2mat';
+        % Check that as a minimum, rigidbodies or markers fields exist
+        if ~(isfield(MovementData, 'rigidbodies') || isfield(MovementData, 'markers'))
+            error('Movement Data must have fields for at least 1 of rigid bodies or markers');
+        end
     end
 elseif isa(MovementData, 'double')
     MovementDataType = 'matrix';
@@ -125,12 +130,8 @@ if ~params.LengthsAlreadyMatch
         end
     end
     
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    % RS note to self: This needs to be done better
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-%     % Find edges of trigger (where it steps up and steps down)
-     [~, samples] = findpeaks(abs(diff(params.Trigger)), 'MinPeakHeight', 0.5*max(abs(diff(params.Trigger)))); 
+    % Find edges of trigger (where it steps up and steps down)
+    [~, samples] = findpeaks(abs(diff(params.Trigger)), 'MinPeakHeight', 0.5*max(abs(diff(params.Trigger)))); 
       
     % Check length of samples is 2. If only one step was recorded, produce 
     % a warning then assume it was the start. Otherwise raise error
@@ -154,9 +155,12 @@ if ~params.LengthsAlreadyMatch
 		switch MovementDataType
 			case 'matrix'
 				disp(['Length of Optitrack data: ' num2str(round(length(MovementData(:,1)) / 120, 2)) 's']);
-			case 'struct'
+			case 'struct_csv2mat'
 				disp(['Length of Optitrack data: ' num2str(round(...
 					MovementData.time(end),2)) 's']);
+            case 'struct_readRB'
+                disp(['Length of Optitrack data: ', num2str(round(...
+                    MovementData.RemainingMarkers.Time(end),2)), 's']);
 		end
 		
     end
@@ -199,7 +203,7 @@ if ~params.LengthsAlreadyMatch
     % Trim movement data (if needed)
     if length(samples) == 1
         switch MovementDataType
-            case 'struct'
+            case 'struct_csv2mat'
                 if exist('time', 'var')
                     t1 = time;
                 else
@@ -222,7 +226,27 @@ if ~params.LengthsAlreadyMatch
                 end
                 MovementData.time(trim_idxs) = [];
                 
-                clear t0 t1 
+                clear t0 t1
+
+            case 'struct_readRB'
+                if exist('time', 'var')
+                    t1 = time;
+                else
+                    error('If the OPMdata is provided as a matrix, the full trigger cycle (off, on, off) must be provided');
+                end
+                t0 = MovementData.RemainingMarkers.Time;
+
+                % Remaining markers
+                MovementData.RemainingMarkers = MovementData.RemainingMarkers(t0<=t1,:);
+
+                % Rigid bodies
+                rigid_body_names = setdiff(fieldnames(MovementData), {'RemainingMarkers', 'cfg'});
+                for i = 1:length(rigid_body_names)
+                    MovementData.(rigid_body_names{i}).RigidBody = MovementData.(rigid_body_names{i}).RigidBody(t0<=t1,:);
+                    MovementData.(rigid_body_names{i}).RigidBodyMarker = MovementData.(rigid_body_names{i}).RigidBodyMarker(t0<=t1,:);
+                end
+
+                clear t0 t1
                 
             case 'matrix'
                 error(sprintf('Full trigger was not found. When the movement data is given as a matrix, either the movement\nand OPM data must already start and end at the same time, or the full trigger must be given.'));
@@ -238,7 +262,7 @@ end
 % Resample Data
 if ~params.ResampleOPMdata
     switch MovementDataType
-        case 'struct'
+        case {'struct_csv2mat', 'struct_readRB'}
             % Get time vector you want to match to:
             switch OPMdataType
                 case 'spm'
@@ -253,7 +277,7 @@ if ~params.ResampleOPMdata
                     t1 = linspace(MovementData.time(1), MovementData.time(end), size(OPMdataOut,2));
             end
             MovementDataOut = resampleOptiTrack(MovementData,t1);
-            if strcmp(OPMdataType, 'ft')
+            if strcmp(OPMdataType, 'ft') && strcmp(MovementDataType, 'struct_csv2mat')
                 MovementDataOut.time = OPMdataOut.time{1};
             end
         case 'matrix'
@@ -279,8 +303,10 @@ else
     MovementDataOut = MovementData;
     % Find the vector you're resampling to
     switch MovementDataType
-        case 'struct'
+        case 'struct_csv2mat'
             t1 = MovementData.time;
+        case 'struct_readRB'
+            t1 = MovementData.RemainingMarkers.Time;
         case 'matrix'
             t1 = linspace(0, 1, size(MovementData,1));
     end
