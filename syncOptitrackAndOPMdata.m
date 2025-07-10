@@ -15,6 +15,7 @@ function [ MovementDataOut, OPMdataOut, samples ] = syncOptitrackAndOPMdata( Mov
 %       syncOptitrackAndOPMdata(___, 'TriggerChannelName', 'OptiTrig')
 %       syncOptitrackAndOPMdata(___, 'Trigger', TriggerVector)
 %       syncOptitrackAndOPMdata(___, 'ResampleOPMdata', false)
+%       syncOptitrackAndOPMdata(___, 'TriggerType', 'start')
 %
 % INTPUT:
 %   - MovementData: the OptiTrack recordings. Can be either a struct object
@@ -60,6 +61,12 @@ function [ MovementDataOut, OPMdataOut, samples ] = syncOptitrackAndOPMdata( Mov
 %           way around. All of the trimming will still match the previously
 %           given pattern (i.e. trim the OPM data unless only one trigger
 %           point is available).
+%       - TriggerType (default: start): in case the OPM recording was
+%           started or stopped before the Optitrack recording, there will
+%           be only a single trigger in the OPM Optitrack channel. By
+%           setting TriggerType to 'start' or 'end', you can define whether
+%           this single trigger marks the when the Optitrack recording
+%           started or ended.
 %
 % OUTPUT:
 %   - MovementDataOut: Resampled (or untouched if ResampleOPMdata = true) 
@@ -73,17 +80,24 @@ function [ MovementDataOut, OPMdataOut, samples ] = syncOptitrackAndOPMdata( Mov
 % AUTHOR:
 %   Stephanie Mellor, UCL (stephanie.mellor.17@ucl.ac.uk)
 
+% Define default values
+defaultLengthsAlreadyMatch = false;
+defaultTriggerChannelName = 'OptiTrig';
+defaultResampleOPMdata = false;
+defaultRigidBodyNames = {};  % Set to empty cell array for lists
+defaultTriggerType = 'start';
 
-% Parse inputs
-defaults = struct('LengthsAlreadyMatch', false, ...
-    'TriggerChannelName', 'OptiTrig', 'ResampleOPMdata', false);  % define default values
-params = struct(varargin{:});
-for f = fieldnames(defaults)'
-    if ~isfield(params, f{1})
-        params.(f{1}) = defaults.(f{1});
-    end
-end
-clear defaults
+% Set up input parser
+p = inputParser;
+addParameter(p, 'LengthsAlreadyMatch', defaultLengthsAlreadyMatch);
+addParameter(p, 'TriggerChannelName', defaultTriggerChannelName);
+addParameter(p, 'ResampleOPMdata', defaultResampleOPMdata);
+addParameter(p, 'RigidBodyNames', defaultRigidBodyNames);
+addParameter(p, 'TriggerType', defaultTriggerType);
+
+% Parse input
+parse(p, varargin{:});
+params = p.Results;
 
 % Check type of OPM data entered
 if isa(OPMdata, 'meeg')
@@ -140,7 +154,11 @@ if ~params.LengthsAlreadyMatch
     elseif length(samples) == 0
         error('No trigger steps found. Check given trigger channel.');
     elseif length(samples) == 1
-        warning('Only one step in the trigger was found. It will be assume that this is from the start of the Optitrack recording');
+        if ~isfield(params, 'TriggerType')
+            warning('Only one step in the trigger was found. It will be assume that this is from the start of the Optitrack recording');
+        else
+            disp(['Only one step in the trigger was found. As per user input, this will be treated as the ' params.TriggerType ' of the Optitrack recording.']);
+        end
     elseif length(samples) == 2
         switch OPMdataType
             case 'ft'
@@ -174,10 +192,17 @@ if ~params.LengthsAlreadyMatch
                 Dnew(:,:,:) = OPMdata(:,samples(1):samples(2),:);
                 OPMdataOut = Dnew;
             elseif length(samples) == 1
-                Dnew = clone(OPMdata, ['t_', fname(OPMdata)], [OPMdata.nchannels, length(samples(1):OPMdata.nsamples), 1]);
-                Dnew = timeonset(Dnew, 0);
-                Dnew(:,:,:) = OPMdata(:,samples(1):OPMdata.nsamples,:);
-                OPMdataOut = Dnew;
+                if ~isfield(params, 'TriggerType') || params.TriggerType == "start"
+                    Dnew = clone(OPMdata, ['t_', fname(OPMdata)], [OPMdata.nchannels, length(samples(1):OPMdata.nsamples), 1]);
+                    Dnew = timeonset(Dnew, 0);
+                    Dnew(:,:,:) = OPMdata(:,samples(1):OPMdata.nsamples,:);
+                    OPMdataOut = Dnew;
+                elseif params.TriggerType == "end"
+                    Dnew = clone(OPMdata, ['t_', fname(OPMdata)], [OPMdata.nchannels, length(1:samples(1)), 1]);
+                    Dnew = timeonset(Dnew, 0);
+                    Dnew(:,:,:) = OPMdata(:,1:samples(1),:);
+                    OPMdataOut = Dnew;
+                end
             end
             clear Dnew
             time = OPMdataOut.time;
@@ -210,7 +235,23 @@ if ~params.LengthsAlreadyMatch
                     error('If the OPMdata is provided as a matrix, the full trigger cycle (off, on, off) must be provided');
                 end
                 t0 = MovementData.time;
-                trim_idxs = (t0 > max(t1));
+                
+                if ~isfield(params, 'TriggerType') || params.TriggerType == "start"
+                    % Keep data up to end of OPM recording
+                    trim_idxs = t0 > max(t1);
+        
+                elseif params.TriggerType == "end"
+                    % Duration of OPM
+                    duration_OPM = max(t1) - min(t1);
+                    t0_start = max(t0) - duration_OPM;
+        
+                    if t0_start < min(t0)
+                        warning('MovementData is shorter than OPM duration. Keeping full MovementData.');
+                        trim_idxs = false(size(t0));  % Keep all
+                    else
+                        trim_idxs = t0 < t0_start;
+                    end
+                end
                 
                 % - Labeled markers
                 for i = 1:size(MovementData.markers.labeledmarkers,2)
@@ -236,14 +277,37 @@ if ~params.LengthsAlreadyMatch
                 end
                 t0 = MovementData.RemainingMarkers.Time;
 
-                % Remaining markers
-                MovementData.RemainingMarkers = MovementData.RemainingMarkers(t0<=t1,:);
+                if ~isfield(params, 'TriggerType') || params.TriggerType == "start"
 
-                % Rigid bodies
-                rigid_body_names = setdiff(fieldnames(MovementData), {'RemainingMarkers', 'cfg'});
-                for i = 1:length(rigid_body_names)
-                    MovementData.(rigid_body_names{i}).RigidBody = MovementData.(rigid_body_names{i}).RigidBody(t0<=t1,:);
-                    MovementData.(rigid_body_names{i}).RigidBodyMarker = MovementData.(rigid_body_names{i}).RigidBodyMarker(t0<=t1,:);
+                    % Remaining markers
+                    MovementData.RemainingMarkers = MovementData.RemainingMarkers(t0<=max(t1),:);
+    
+                    % Rigid bodies
+                    rigid_body_names = setdiff(fieldnames(MovementData), {'RemainingMarkers', 'cfg'});
+                    for i = 1:length(rigid_body_names)
+                        MovementData.(rigid_body_names{i}).RigidBody = MovementData.(rigid_body_names{i}).RigidBody(t0<=max(t1),:);
+                        MovementData.(rigid_body_names{i}).RigidBodyMarker = MovementData.(rigid_body_names{i}).RigidBodyMarker(t0<=max(t1),:);
+                    end
+
+                elseif params.TriggerType == "end"
+
+                    % Duration of OPM recording
+                    duration_OPM = max(t1) - min(t1);
+                
+                    % Trim MovementData to only the last duration_OPM seconds
+                    t0_start = max(t0) - duration_OPM;
+                    idx_range = t0 >= t0_start;
+                
+                    % Remaining markers
+                    MovementData.RemainingMarkers = MovementData.RemainingMarkers(idx_range, :);
+                
+                    % Rigid bodies
+                    rigid_body_names = setdiff(fieldnames(MovementData), {'RemainingMarkers', 'cfg'});
+                    for i = 1:length(rigid_body_names)
+                        MovementData.(rigid_body_names{i}).RigidBody = MovementData.(rigid_body_names{i}).RigidBody(idx_range, :);
+                        MovementData.(rigid_body_names{i}).RigidBodyMarker = MovementData.(rigid_body_names{i}).RigidBodyMarker(idx_range, :);
+                    end
+
                 end
 
                 clear t0 t1
