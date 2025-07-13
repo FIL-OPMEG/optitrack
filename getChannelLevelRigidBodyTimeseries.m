@@ -1,4 +1,4 @@
-function [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries(cfg)
+function [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries_CUSTOM(cfg)
 % This function outputs a cell array of tables containing rigid body
 % information for each sensor position provided. The inputs are the
 % sensorPositions from extractSensorPositions_V3, the rigidBodyT from
@@ -38,6 +38,8 @@ function [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries(cfg)
 % cfg.longStalkTranslation	= [-1.65, -57.2, -5.35];
 % cfg.rigidBodyT			= rigidBodyT.Scannercast_XXX.RigidBody; % Provide the rigid body timeseries table
 % cfg.plot					= true; % Whether to plot some outputs. Recommended.
+% cfg.output_scaling        = 'mm'; % Optional: specify output scaling ('mm' (default) or 'm')
+%
 % [sensorLevelRbTimeseries] = getChannelLevelRigidBodyTimeseries(cfg);
 % Author:	Nicholas Alexander (n.alexander@ucl.ac.uk)
 % MIT License
@@ -53,7 +55,7 @@ expression = '<position>([^<]+)</position>';
 matches = regexp(fileContents, expression, 'tokens');
 positions = cellfun(@(x) sscanf(x{1}, '%f,%f,%f'), matches,'UniformOutput',false);
 
-% Reformat and scale
+% Reformat and scale to mm (aligned with scannercast metrics)
 rigidPos = nan(length(positions),3);
 for posIdx = 1:length(positions)
 	rigidPos(posIdx,1) = positions{posIdx}(1,1)' * 1000;
@@ -104,9 +106,32 @@ for i = 1:length(cfg.longStalkSlots)
 end
 
 fixedPos = [longStalkPos; shortStalkPos];
+
+if isfield(cfg, 'sideStalkSlots')
+
+    sideStalkPos = nan(length(cfg.sideStalkSlots),3);
+    for i = 1:length(cfg.sideStalkSlots)
+	    % Find the sensor position row
+	    rowIdx = cfg.sensorPositions.slot == cfg.sideStalkSlots(i);
+    
+	    % Get the orientation unit vectors
+	    tmpXOri = [cfg.sensorPositions.G2_Ox_X(rowIdx); cfg.sensorPositions.G2_Oy_X(rowIdx); cfg.sensorPositions.G2_Oz_X(rowIdx)];
+	    tmpYOri = [cfg.sensorPositions.G2_Ox_Y(rowIdx); cfg.sensorPositions.G2_Oy_Y(rowIdx); cfg.sensorPositions.G2_Oz_Y(rowIdx)];
+	    tmpZOri = [cfg.sensorPositions.G2_Ox_Z(rowIdx); cfg.sensorPositions.G2_Oy_Z(rowIdx); cfg.sensorPositions.G2_Oz_Z(rowIdx)];
+    
+	    % Get the position of G2 with shim
+	    tmpPos = [cfg.sensorPositions.G2_P_X(rowIdx), cfg.sensorPositions.G2_P_Y(rowIdx), cfg.sensorPositions.G2_P_Z(rowIdx)];
+	    
+	    % Just move out a bit along Y axis
+	    sideStalkPos(i,:) = tmpPos + cfg.sideStalkTranslation(1)*tmpXOri' + cfg.sideStalkTranslation(2)*tmpYOri' + cfg.sideStalkTranslation(3)*tmpZOri';
+    end
+
+    fixedPos = [longStalkPos; shortStalkPos; sideStalkPos];
+end
+
 fixedCentroid = mean(fixedPos);
 fixedPos = fixedPos - fixedCentroid;
-clear short* long* tmp* i 
+clear short* long* side* tmp* i 
 
 %% Now find the transform from fixedPos to rigidPos
 % Create all permutations of the markers (if there are > 8 markers or so,
@@ -212,6 +237,7 @@ for i = 1:height(cfg.sensorPositions)
 	% Flip if using x
 	if scalarTP < 0
     	tmpXOri = -tmpXOri;
+        fprintf('Correcting handedness for sensor %d.\n', i);
 	end
 
 	% Apply rotation - bit untidy...
@@ -251,6 +277,7 @@ if cfg.plot
 	quiver3(rbPos(1),rbPos(2),rbPos(3),rbZOri(1),rbZOri(2),rbZOri(3),100,'b');
 	
 	hold off
+    axis equal
 end
 
 clear tmp* new* U V translation 
@@ -268,12 +295,11 @@ for i = 1:length(transformedSensorPos2(:,1))
 	% Compute the translation vector between the frames
 	t1 = transformedSensorPos2(i,:) - rbPos;
 	t2 = transformedSensorPos3(i,:) - rbPos;
-	
+    
 	% Compute the rotation matrix between the frames
 	R = [dot(rbXOri,tmpXOri) dot(rbXOri,tmpYOri) dot(rbXOri,tmpZOri);
 		dot(rbYOri,tmpXOri) dot(rbYOri,tmpYOri) dot(rbYOri,tmpZOri);
 		dot(rbZOri,tmpXOri) dot(rbZOri,tmpYOri) dot(rbZOri,tmpZOri)];
-
 
 	% Combine the translation and rotation into a single transformation matrix
 	T{i,1} = [R t1'; 0 0 0 1];
@@ -283,6 +309,28 @@ end
 clear tmp* transformed*
 
 %% Apply the transformation mat
+
+% Check scaling of the rigid body timeseries: below 10 is likely in meters
+threshold_mm_vs_m = 10;
+
+% Compute max coordinate range of rigid body timeseries
+maxX = max(abs(cfg.rigidBodyT.X_Position));
+maxY = max(abs(cfg.rigidBodyT.Y_Position));
+maxZ = max(abs(cfg.rigidBodyT.Z_Position));
+
+% Check if values are small (i.e., probably in meters)
+isLikelyMeters = max([maxX, maxY, maxZ]) < threshold_mm_vs_m;
+
+% Convert only if necessary
+if isLikelyMeters
+    disp('Converting cfg.rigidBodyT positions from meters to millimeters...');
+    cfg.rigidBodyT.X_Position = cfg.rigidBodyT.X_Position * 1000;
+    cfg.rigidBodyT.Y_Position = cfg.rigidBodyT.Y_Position * 1000;
+    cfg.rigidBodyT.Z_Position = cfg.rigidBodyT.Z_Position * 1000;
+else
+    disp('cfg.rigidBodyT positions appear to already be in millimeters. No conversion applied.');
+end
+
 % Breakdown the rigidbody timeseries
 xPos = cfg.rigidBodyT.X_Position;
 yPos = cfg.rigidBodyT.Y_Position;
@@ -290,6 +338,7 @@ zPos = cfg.rigidBodyT.Z_Position;
 xAngle = cfg.rigidBodyT.X_Rotation;
 yAngle = cfg.rigidBodyT.Y_Rotation;
 zAngle = cfg.rigidBodyT.Z_Rotation;
+wAngle = cfg.rigidBodyT.W_Rotation;
 
 % Preallocation
 sensorLevelRbTimeseries = cell(height(cfg.sensorPositions),2);
@@ -303,9 +352,9 @@ fprintf('Applying transformations to timeseries: 0%%\n');
 % Loop through the transformation matrix array
 for i = 1:height(cfg.sensorPositions)
 	for j = 1:2
-		
-		% Convert Euler angles to rotation matrices
-		R = eul2rotm([xAngle, yAngle, zAngle]);
+
+		% Convert angles to rotation matrices
+        R = quat2rotm([wAngle, xAngle, yAngle, zAngle]); % Motive export is in quaternions
 
 		% Create 4x4 homogeneous transformation matrices for each time step
 		M = zeros(4, 4, length(xPos));
@@ -313,20 +362,19 @@ for i = 1:height(cfg.sensorPositions)
 		M(1, 4, :) = xPos;
 		M(2, 4, :) = yPos;
 		M(3, 4, :) = zPos;
-		M(4, 4, :) = 1;
+        M(4, 4, :) = 1;
 
 		% Apply the transformation matrix to each time step
 		M_transformed = zeros(4, 4, length(xPos));
 		for k = 1:length(xPos)
-    		M_transformed(:,:,k) = T{i,j} * M(:,:,k);
-		end
+            M_transformed(:,:,k) = M(:,:,k) * T{i,j}; % Premultiply T{i,j} with M(:,:,k) as per Matlab help
+        end
 
 		% Extract the transformed position and orientation data
 		transformedXPos = squeeze(M_transformed(1, 4, :));
 		transformedYPos = squeeze(M_transformed(2, 4, :));
 		transformedZPos = squeeze(M_transformed(3, 4, :));
-		
-% 		tmpEul = rotm2eul(M_transformed(1:3,1:3,:),'XYZ');
+
 		tmpQuat = rotm2quat(M_transformed(1:3,1:3,:));
 		sensorLevelRbTimeseries{i,j}(:,:) = [transformedXPos transformedYPos transformedZPos tmpQuat];
 	end
@@ -342,7 +390,7 @@ end
 fprintf('\height(sensorPositions)');
 fprintf('\n');
 
-% Plot positition timeseries to show variety of sensor movement
+%% Plot positition timeseries to show variety of sensor movement
 if cfg.plot
 	colormap = flipud(gray(length(sensorLevelRbTimeseries)));
 	figure
@@ -384,7 +432,7 @@ end
 % Table to match input
 tmpFrame = 1:length(sensorLevelRbTimeseries{i,j});
 tmpTime = tmpFrame / 120;
-outputVars = {'Frame', 'Time', 'X_Position', 'Y_Position', 'Z_Position', 'X_Rotation', 'Y_Rotation', 'Z_Rotation', 'W_Rotation', 'MeanMarkerError'};
+outputVars = {'Frame', 'Time', 'X_Position', 'Y_Position', 'Z_Position', 'W_Rotation', 'X_Rotation', 'Y_Rotation', 'Z_Rotation', 'MeanMarkerError'}; % Each quaternion, one per row, is of the form q = [w x y z].
 for i = 1:length(sensorLevelRbTimeseries(:,1))
 	for j = 1:2
 		
@@ -392,4 +440,32 @@ for i = 1:length(sensorLevelRbTimeseries(:,1))
 		tmpTable = array2table(tmpDat,"VariableNames",outputVars);
 		sensorLevelRbTimeseries{i,j} = tmpTable;
 	end
+end
+
+%% Handle output scaling
+
+% Set default scaling to 'mm' if not provided or invalid
+validScalings = {'mm', 'm'};
+if ~isfield(cfg, 'output_scaling')
+    cfg.output_scaling = 'mm';  % Default to millimeters
+elseif ~any(strcmpi(cfg.output_scaling, validScalings))
+    error('Invalid value for cfg.output_scaling. Expected ''mm'' or ''m''.');
+end
+
+outputInMeters = strcmpi(cfg.output_scaling, 'm');
+
+if outputInMeters
+    disp('Scaling sensorLevelRbTimeseries output to meters...');
+    for i = 1:size(sensorLevelRbTimeseries, 1)
+        for j = 1:size(sensorLevelRbTimeseries, 2)
+            if ~isempty(sensorLevelRbTimeseries{i,j})
+                % Scale position columns from mm to m
+                sensorLevelRbTimeseries{i,j}.X_Position = sensorLevelRbTimeseries{i,j}.X_Position / 1000;
+                sensorLevelRbTimeseries{i,j}.Y_Position = sensorLevelRbTimeseries{i,j}.Y_Position / 1000;
+                sensorLevelRbTimeseries{i,j}.Z_Position = sensorLevelRbTimeseries{i,j}.Z_Position / 1000; 
+            end
+        end
+    end
+else
+    disp('sensorLevelRbTimeseries output remains in millimeters.');
 end
