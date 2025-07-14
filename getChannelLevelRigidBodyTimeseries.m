@@ -107,6 +107,9 @@ end
 
 fixedPos = [longStalkPos; shortStalkPos];
 
+% Side stalks are for custom use cases only (i.e. if stalks have been
+% attached not on the standard stalk holders, and an additional translation
+% is required (e.g. sideways).
 if isfield(cfg, 'sideStalkSlots')
 
     sideStalkPos = nan(length(cfg.sideStalkSlots),3);

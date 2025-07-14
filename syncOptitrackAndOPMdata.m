@@ -244,10 +244,15 @@ if ~params.LengthsAlreadyMatch
                     % Duration of OPM
                     duration_OPM = max(t1) - min(t1);
                     t0_start = max(t0) - duration_OPM;
-        
-                    if t0_start < min(t0)
-                        warning('MovementData is shorter than OPM duration. Keeping full MovementData.');
-                        trim_idxs = false(size(t0));  % Keep all
+                    
+                    % Handle edge cases with missing trigger (i.e. where MovementData is still shorter than OPM data)
+                    if t0_start < min(t0)                   
+                        trim_idxs = false(size(t0));  % Keep all movement data
+                        warning('MovementData is shorter than OPM duration. Trimming the start of the OPM data.');
+                        % Need to add code for trimming the start of the
+                        % OPM recording
+                        % ....
+                        % ....
                     else
                         trim_idxs = t0 < t0_start;
                     end
@@ -291,10 +296,11 @@ if ~params.LengthsAlreadyMatch
 
                 elseif params.TriggerType == "end"
 
-                    % Duration of OPM recording
+                    % Duration of recordings
                     duration_OPM = max(t1) - min(t1);
+                    duration_Movement = max(t0) - min(t0);
                 
-                    % Trim MovementData to only the last duration_OPM seconds
+                    % Trim MovementData at the end to match OPM recording
                     t0_start = max(t0) - duration_OPM;
                     idx_range = t0 >= t0_start;
                 
@@ -306,6 +312,32 @@ if ~params.LengthsAlreadyMatch
                     for i = 1:length(rigid_body_names)
                         MovementData.(rigid_body_names{i}).RigidBody = MovementData.(rigid_body_names{i}).RigidBody(idx_range, :);
                         MovementData.(rigid_body_names{i}).RigidBodyMarker = MovementData.(rigid_body_names{i}).RigidBodyMarker(idx_range, :);
+                    end
+                    
+                    % Handle edge cases with missing trigger (i.e. where MovementData is still shorter than OPM data)
+                    if t0_start < min(t0)
+                        
+                        warning('MovementData is shorter than OPM duration. Trimming the start of the OPM data.');
+
+                        movementStartTime = duration_OPM - duration_Movement;
+                        [~, movementStartIdx] = min(abs(OPMdataOut.time - movementStartTime));
+
+                        switch OPMdataType
+                            case 'spm'
+                                Dnew = clone(OPMdataOut, ['t_', fname(OPMdataOut)], [OPMdataOut.nchannels, length(movementStartIdx:OPMdataOut.nsamples), 1]);
+                                Dnew = timeonset(Dnew, 0);
+                                Dnew(:,:,:) = OPMdataOut(:,movementStartIdx:OPMdataOut.nsamples,:);
+                                clear OPMdataOut
+                                OPMdataOut = Dnew;
+                                clear Dnew
+                                time = OPMdataOut.time;
+                            case 'ft'
+                                % Need to add logic for Fieldtrip
+                                % ....
+                            case 'matrix'
+                                OPMdataOut = OPMdataOut(:,movementStartIdx:end,:);
+                        end
+
                     end
 
                 end
